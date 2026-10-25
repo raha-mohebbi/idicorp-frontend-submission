@@ -22,6 +22,10 @@ export function clearAccessToken() {
   accessToken = null
 }
 
+export function getAccessToken() {
+  return accessToken
+}
+
 api.interceptors.request.use((config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`

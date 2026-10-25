@@ -748,3 +748,33 @@ button:disabled {
     margin-right: auto;
   }
 }
+.service-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.service-navigation button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border: 1px solid #e0e3eb;
+  border-radius: 10px;
+  background: white;
+  color: #33384c;
+  font: inherit;
+  cursor: pointer;
+}
+
+.service-navigation button.is-active {
+  background: #1d2238;
+  color: white;
+  border-color: #1d2238;
+}
+
+.service-navigation button:focus-visible {
+  outline: 2px solid #e20912;
+  outline-offset: 3px;
+}
