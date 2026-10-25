@@ -1,9 +1,14 @@
-
 @import "tailwindcss";
 
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   color: #1d2238;
   background: #f4f6fb;
   font-synthesis: none;
@@ -108,7 +113,9 @@ button:disabled {
   background: #fff;
   color: #1d2238;
   font-size: 13px;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .field input:focus-visible {
@@ -336,7 +343,9 @@ button:disabled {
   font-size: 13px;
   font-weight: 650;
   cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .tasks-refresh:hover,
@@ -431,7 +440,9 @@ button:disabled {
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 3px 12px rgb(29 34 56 / 3%);
-  transition: border-color 160ms ease, transform 160ms ease,
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
     box-shadow 160ms ease;
 }
 
@@ -593,4 +604,147 @@ button:disabled {
     transition: none;
   }
 }
+.tasks-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 
+.tasks-create-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #1d2238;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.tasks-create-button:hover {
+  opacity: 0.88;
+}
+
+.tasks-create-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.task-form {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 24px;
+  padding: 24px;
+  background: white;
+  border: 1px solid #e6e8ef;
+  border-radius: 16px;
+}
+
+.task-form h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.task-form-field {
+  display: grid;
+  gap: 8px;
+}
+
+.task-form-field input,
+.task-form-field textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #dfe2ea;
+  border-radius: 10px;
+  background: #fff;
+  color: #1d2238;
+  font: inherit;
+}
+
+.task-form-field input:focus,
+.task-form-field textarea:focus {
+  outline: 2px solid #1d2238;
+  outline-offset: 2px;
+}
+
+.task-form-field textarea {
+  resize: vertical;
+}
+
+.task-form-field small {
+  color: #74798a;
+  text-align: left;
+}
+
+.task-form-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tasks-error-message {
+  margin: 0;
+  color: #c62828;
+}
+
+.tasks-success {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border: 1px solid #b7e4c7;
+  border-radius: 10px;
+  background: #edf9f0;
+  color: #216e39;
+}
+
+@media (max-width: 600px) {
+  .tasks-header-actions {
+    width: 100%;
+  }
+
+  .tasks-header-actions button {
+    flex: 1;
+  }
+
+  .task-form {
+    padding: 18px;
+  }
+}
+
+.task-delete-button {
+  color: #c62828;
+}
+
+.task-icon-button:disabled,
+.task-action-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.task-card-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #626779;
+  font-size: 0.9rem;
+}
+
+.task-card-checkbox input,
+.task-form-checkbox input {
+  accent-color: #1d2238;
+}
+
+@media (max-width: 600px) {
+  .task-card-actions {
+    width: 100%;
+  }
+
+  .task-card-actions .task-status {
+    margin-right: auto;
+  }
+}
