@@ -1,23 +1,27 @@
-
-import { useEffect, useState } from 'react'
-import { Eye, EyeOff, LockKeyhole, RefreshCw } from 'lucide-react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { api, clearAccessToken, getErrorMessage, setAccessToken } from '../../lib/api'
+import { useEffect, useState } from "react";
+import { Eye, EyeOff, LockKeyhole, RefreshCw } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import {
+  api,
+  clearAccessToken,
+  getErrorMessage,
+  setAccessToken,
+} from "../../lib/api";
 
 const loginSchema = z.object({
-  username: z.string().trim().min(1, 'نام کاربری را وارد کنید.'),
-  password: z.string().min(1, 'رمز عبور را وارد کنید.'),
-  captcha_answer: z.string().trim().min(1, 'پاسخ کپچا را وارد کنید.'),
-})
+  username: z.string().trim().min(1, "نام کاربری را وارد کنید."),
+  password: z.string().min(1, "رمز عبور را وارد کنید."),
+  captcha_answer: z.string().trim().min(1, "پاسخ کپچا را وارد کنید."),
+});
 
 export default function LoginPage({ onLogin }) {
-  const [captcha, setCaptcha] = useState(null)
-  const [captchaLoading, setCaptchaLoading] = useState(true)
-  const [captchaError, setCaptchaError] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [loginError, setLoginError] = useState('')
+  const [captcha, setCaptcha] = useState(null);
+  const [captchaLoading, setCaptchaLoading] = useState(true);
+  const [captchaError, setCaptchaError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState("");
 
   const {
     register,
@@ -27,88 +31,88 @@ export default function LoginPage({ onLogin }) {
   } = useForm({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      username: '',
-      password: '',
-      captcha_answer: '',
+      username: "",
+      password: "",
+      captcha_answer: "",
     },
-  })
+  });
 
   async function loadCaptcha() {
-    setCaptchaLoading(true)
-    setCaptchaError('')
-    setCaptcha(null)
+    setCaptchaLoading(true);
+    setCaptchaError("");
+    setCaptcha(null);
 
     try {
- const { data } = await api.get('/api/auth/login')
-      setCaptcha(data)
+      const { data } = await api.get("/api/auth/login");
+      setCaptcha(data);
     } catch {
-      setCaptchaError('دریافت کپچا ناموفق بود.')
+      setCaptchaError("دریافت کپچا ناموفق بود.");
     } finally {
-      setCaptchaLoading(false)
+      setCaptchaLoading(false);
     }
   }
 
- useEffect(() => {
-  let cancelled = false
+  useEffect(() => {
+    let cancelled = false;
 
-  async function fetchCaptcha() {
-    try {
-      const { data } = await api.get('/api/auth/login', {
-  params: { _t: Date.now() },
-})
+    async function fetchCaptcha() {
+      try {
+        const { data } = await api.get("/api/auth/login", {
+          params: { _t: Date.now() },
+        });
 
-      if (!cancelled) {
-        setCaptcha(data)
-        setCaptchaError('')
-      }
-    } catch {
-      if (!cancelled) {
-        setCaptchaError('دریافت کپچا ناموفق بود.')
-      }
-    } finally {
-      if (!cancelled) {
-        setCaptchaLoading(false)
+        if (!cancelled) {
+          setCaptcha(data);
+          setCaptchaError("");
+        }
+      } catch {
+        if (!cancelled) {
+          setCaptchaError("دریافت کپچا ناموفق بود.");
+        }
+      } finally {
+        if (!cancelled) {
+          setCaptchaLoading(false);
+        }
       }
     }
-  }
 
-  fetchCaptcha()
+    fetchCaptcha();
 
-  return () => {
-    cancelled = true
-  }
-}, [])
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(values) {
-    setLoginError('')
+    setLoginError("");
 
     try {
-      const { data } = await api.post('/api/auth/login', {
+      const { data } = await api.post("/api/auth/login", {
         username: values.username,
         password: values.password,
         salt: captcha.salt,
         captcha_answer: values.captcha_answer,
-      })
+      });
 
       if (!data?.access_token) {
-        throw new Error('پاسخ ورود فاقد access token است.')
+        throw new Error("پاسخ ورود فاقد access token است.");
       }
 
-      setAccessToken(data.access_token)
-      onLogin(data)
+      setAccessToken(data.access_token);
+      onLogin(data);
     } catch (error) {
-      clearAccessToken()
+      clearAccessToken();
       setLoginError(
         error.response
           ? getErrorMessage(error)
           : error.message || getErrorMessage(error),
-      )
+      );
       reset({
         username: values.username,
-        password: '',
-        captcha_answer: '',
-      })
-      await loadCaptcha()
+        password: "",
+        captcha_answer: "",
+      });
+      await loadCaptcha();
     }
   }
 
@@ -133,8 +137,8 @@ export default function LoginPage({ onLogin }) {
               autoComplete="username"
               placeholder="نام کاربری خود را وارد کنید"
               aria-invalid={Boolean(errors.username)}
-              aria-describedby={errors.username ? 'username-error' : undefined}
-              {...register('username')}
+              aria-describedby={errors.username ? "username-error" : undefined}
+              {...register("username")}
             />
             {errors.username && (
               <p id="username-error" className="field-error">
@@ -148,17 +152,21 @@ export default function LoginPage({ onLogin }) {
             <div className="password-wrap">
               <input
                 id="password"
-                type={showPassword ? 'text' : 'password'}
+                type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
                 placeholder="رمز عبور خود را وارد کنید"
                 aria-invalid={Boolean(errors.password)}
-                aria-describedby={errors.password ? 'password-error' : undefined}
-                {...register('password')}
+                aria-describedby={
+                  errors.password ? "password-error" : undefined
+                }
+                {...register("password")}
               />
               <button
                 className="password-toggle"
                 type="button"
-                aria-label={showPassword ? 'پنهان کردن رمز عبور' : 'نمایش رمز عبور'}
+                aria-label={
+                  showPassword ? "پنهان کردن رمز عبور" : "نمایش رمز عبور"
+                }
                 onClick={() => setShowPassword((value) => !value)}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -197,7 +205,7 @@ export default function LoginPage({ onLogin }) {
               </div>
             ) : (
               <div className="captcha-placeholder" role="status">
-                {captchaError || 'تصویر کپچا در دسترس نیست.'}
+                {captchaError || "تصویر کپچا در دسترس نیست."}
                 <button type="button" onClick={loadCaptcha}>
                   تلاش دوباره
                 </button>
@@ -210,9 +218,9 @@ export default function LoginPage({ onLogin }) {
               placeholder="متن داخل تصویر را وارد کنید"
               aria-invalid={Boolean(errors.captcha_answer)}
               aria-describedby={
-                errors.captcha_answer ? 'captcha-error' : undefined
+                errors.captcha_answer ? "captcha-error" : undefined
               }
-              {...register('captcha_answer')}
+              {...register("captcha_answer")}
             />
             {errors.captcha_answer && (
               <p id="captcha-error" className="field-error">
@@ -232,14 +240,12 @@ export default function LoginPage({ onLogin }) {
             type="submit"
             disabled={isSubmitting || captchaLoading || !captcha}
           >
-            {isSubmitting ? 'در حال ورود...' : 'ورود به پنل'}
+            {isSubmitting ? "در حال ورود..." : "ورود به پنل"}
           </button>
         </form>
 
-        <p className="login-footer">
-          دسترسی امن به سرویس‌های IDICorp
-        </p>
+        <p className="login-footer">دسترسی امن به سرویس‌های IDICorp</p>
       </section>
     </main>
-  )
+  );
 }
