@@ -778,3 +778,70 @@ button:disabled {
   outline: 2px solid #e20912;
   outline-offset: 3px;
 }
+.echo-actions,
+.echo-composer {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.echo-actions {
+  margin-bottom: 20px;
+}
+
+.echo-composer {
+  margin-top: 20px;
+}
+
+.echo-composer .task-form-field {
+  flex: 1;
+  min-width: 200px;
+}
+
+.echo-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.echo-message {
+  padding: 14px 16px;
+  border: 1px solid #e0e3eb;
+  border-radius: 12px;
+  background: white;
+  overflow-wrap: anywhere;
+}
+
+.echo-message span {
+  color: #6b7185;
+  font-size: 12px;
+}
+
+.echo-message p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+.echo-message-sent {
+  border-right: 3px solid #1d2238;
+}
+
+.echo-message-received {
+  border-right: 3px solid #e20912;
+}
+
+.echo-message-system {
+  background: #f5f6fa;
+}
+
+@media (max-width: 480px) {
+  .echo-composer {
+    align-items: stretch;
+  }
+
+  .echo-composer .task-form-field {
+    min-width: 100%;
+  }
+}

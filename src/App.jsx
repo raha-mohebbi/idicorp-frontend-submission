@@ -1,28 +1,38 @@
-import { useState } from 'react'
-import { ListTodo, Calculator, LogOut } from 'lucide-react'
-import LoginPage from './features/auth/LoginPage'
-import TasksPage from './features/tasks/TasksPage'
-import CalculatorPage from './features/calculator/CalculatorPage'
-import { clearAccessToken } from './lib/api'
+
+import { useState } from "react";
+import {
+  ListTodo,
+  Calculator,
+  LogOut,
+  MessageCircle,
+  Radio,
+} from "lucide-react";
+
+import LoginPage from "./features/auth/LoginPage";
+import TasksPage from "./features/tasks/TasksPage";
+import CalculatorPage from "./features/calculator/CalculatorPage";
+import EchoPage from "./features/echo/EchoPage";
+import StreamingPage from "./features/echo/StreamingPage";
+import { clearAccessToken } from "./lib/api";
 
 export default function App() {
-  const [session, setSession] = useState(null)
-  const [activePage, setActivePage] = useState('tasks')
+  const [session, setSession] = useState(null);
+  const [activePage, setActivePage] = useState("tasks");
 
   function handleLogin(data) {
-    setSession(data)
-    setActivePage('tasks')
+    setSession(data);
+    setActivePage("tasks");
   }
 
   function handleLogout() {
-    clearAccessToken()
-    setSession(null)
-    setActivePage('tasks')
-    window.location.reload()
+    clearAccessToken();
+    setSession(null);
+    setActivePage("tasks");
+    window.location.reload();
   }
 
   if (!session) {
-    return <LoginPage onLogin={handleLogin} />
+    return <LoginPage onLogin={handleLogin} />;
   }
 
   return (
@@ -46,8 +56,8 @@ export default function App() {
       <nav className="service-navigation" aria-label="سرویس‌ها">
         <button
           type="button"
-          className={activePage === 'tasks' ? 'is-active' : ''}
-          onClick={() => setActivePage('tasks')}
+          className={activePage === "tasks" ? "is-active" : ""}
+          onClick={() => setActivePage("tasks")}
         >
           <ListTodo size={18} />
           مدیریت تسک‌ها
@@ -55,15 +65,41 @@ export default function App() {
 
         <button
           type="button"
-          className={activePage === 'calculator' ? 'is-active' : ''}
-          onClick={() => setActivePage('calculator')}
+          className={activePage === "calculator" ? "is-active" : ""}
+          onClick={() => setActivePage("calculator")}
         >
           <Calculator size={18} />
           ماشین‌حساب
         </button>
+
+        <button
+          type="button"
+          className={activePage === "echo" ? "is-active" : ""}
+          onClick={() => setActivePage("echo")}
+        >
+          <MessageCircle size={18} />
+          سرویس Echo
+        </button>
+
+        <button
+          type="button"
+          className={activePage === "streaming" ? "is-active" : ""}
+          onClick={() => setActivePage("streaming")}
+        >
+          <Radio size={18} />
+          Echo Streaming
+        </button>
       </nav>
 
-      {activePage === 'tasks' ? <TasksPage /> : <CalculatorPage />}
+      {activePage === "tasks" ? (
+        <TasksPage />
+      ) : activePage === "calculator" ? (
+        <CalculatorPage />
+      ) : activePage === "echo" ? (
+        <EchoPage />
+      ) : (
+        <StreamingPage />
+      )}
     </main>
-  )
+  );
 }

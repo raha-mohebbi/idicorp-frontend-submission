@@ -182,3 +182,23 @@
     border-right-color: var(--border);
   }
 }
+.stream-response {
+  margin-top: 24px;
+  padding: 18px;
+  border: 1px solid #e0e3eb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.stream-response h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.stream-response pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.8;
+}
