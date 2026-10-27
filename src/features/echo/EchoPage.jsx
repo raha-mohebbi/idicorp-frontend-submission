@@ -68,7 +68,7 @@ export default function EchoPage() {
           text = parsed.message;
         }
       } catch {
-        // پاسخ متنی ساده است؛ همان را نمایش می‌دهیم.
+           // Non-JSON messages are treated as plain text.
       }
 
       setMessages((current) => [
