@@ -1,39 +1,49 @@
-# IDICorp Frontend Challenge · مستندات فنی و راهنمای پروژه
+# IDICorp Frontend Challenge · Technical Documentation & Project Guide
 
-این پروژه نسخه بازنویسی‌شده و بهینه‌سازی‌شده از چالش فرانت‌اند سازمانی **IDICorp** است که توسط یک مهندس ارشد فرانت‌اند (Senior Frontend Engineer) از نظر معماری، امنیت، استاندارد کدنویسی React 19، کارایی و تجربه کاربری (UX) به صورت کامل بازبینی و پیاده‌سازی شده است.
+This project is a rewritten and optimized implementation of the **IDICorp Enterprise Frontend Challenge**, thoroughly reviewed and implemented with a focus on architecture, security, React 19 coding standards, performance, and user experience (UX).
 
 ---
 
-## ۱. مرور نیازمندی‌ها و چالش‌های کلیدی
+## 1. Requirements Overview & Key Challenges
 
-1. **امنیت احراز هویت در برابر حملات XSS**: توکن احراز هویت تحت هیچ شرایطی نباید در حافظه‌های ذخیره‌سازی آسیب‌پذیر سمت کاربر (`localStorage` یا `sessionStorage`) نگه‌داری شود تا در صورت بروز هرگونه رخنه XSS، توکن توسط اسکریپت‌های مخرب قابل سرقت نباشد.
-2. **ارسال توکن احراز هویت در هدر وب‌سوکت**:
-   بر اساس دستورالعمل نیازمندی‌ها، توکن ورود دریافت شده باید در ارتباط وب‌سوکت در هدر ارسال گردد:
+1. **XSS-Resistant Authentication Security:** Authentication tokens must never be stored in vulnerable client-side storage mechanisms such as `localStorage` or `sessionStorage`. This prevents malicious scripts from directly retrieving tokens from these storage locations in the event of an XSS vulnerability.
+
+2. **Authentication Token Forwarding in WebSocket Headers:**
+
+   According to the project requirements, the received authentication token must be included in the WebSocket connection headers:
+
    ```javascript
    headers: {
      Authorization: `Bearer ${token}`
    }
    ```
-3. **پوشش تمامی سرویس‌های مستند شده در ASSIGNMENT.md**:
-   - احراز هویت دوگانه (Cookie + Bearer Token) با کپچای ریاضی پویا
-   - سیستم مدیریت وظایف (Tasks CRUD) همراه با جست‌وجو و فیلتر برخط
-   - وب‌سوکت ماشین‌حساب (`/ws/calculator`) با ارسال توکن در اولین فریم و دریافت نتیجه بلادرنگ
-   - وب‌سوکت Echo (`/ws/echo`) با احراز هویت Handshake
-   - سرویس پخش جریانی (`/api/echo/stream`) با `ReadableStream` و کنترل انصراف (`AbortController`)
-4. **کیفیت کد و خطاناپذیری**:
-   - پاس شدن کامل و بدون خطای `npm run lint` (ESLint React 19 rules)
-   - ساخت بدون خطا با `npm run build`
-   - مدیریت استیت تمیز بدون Memory Leak و بازگشت خطاهای فارسی معنادار
+
+3. **Complete Coverage of All Services Documented in `ASSIGNMENT.md`:**
+   - Dual authentication using cookies and Bearer tokens, with a dynamic mathematical CAPTCHA.
+   - Task management (CRUD) with real-time search and filtering.
+   - Calculator WebSocket (`/ws/calculator`) with token transmission in the initial frame and real-time result handling.
+   - Echo WebSocket (`/ws/echo`) with handshake authentication.
+   - Streaming service (`/api/echo/stream`) using `ReadableStream` and cancellation through `AbortController`.
+
+4. **Code Quality and Reliability:**
+   - Pass `npm run lint` without errors, following React 19 ESLint rules.
+   - Build successfully with `npm run build`.
+   - Maintain clean state management without memory leaks and provide meaningful error messages in Persian.
 
 ---
 
-## ۲. معماری امنیت و مقابله با XSS (Authentication Architecture)
+## 2. Authentication Architecture & XSS Protection
 
-### چرا `localStorage` و `sessionStorage` ناامن هستند؟
-هر اسکریپتی که در کانتکست صفحه اجرا شود (از جمله افزونه‌های مخرب مرورگر، پکیج‌های شخص ثالث آلوده، یا حملات XSS ناشی از ورودی‌های ناامن)، به شیء `window.localStorage` و `window.sessionStorage` دسترسی کامل و سنکرون دارد. ذخیره توکن در این فضاها دسترسی دائم و بی‌واسطه را به مهاجم می‌دهد.
+### Why Are `localStorage` and `sessionStorage` Insecure?
 
-### راهکار پیاده‌سازی شده: حافظه بسته ماژول (In-Memory Module Closure)
-- توکن دسترسی (`accessToken`) تنها در یک متغیر محلی در اسکوپ بسته فایل [`src/lib/api.js`](src/lib/api.js) ذخیره می‌شود:
+Any script executing within the page's context—including malicious browser extensions, compromised third-party packages, or malicious scripts injected through XSS vulnerabilities—can access `window.localStorage` and `window.sessionStorage` directly and synchronously.
+
+Storing authentication tokens in these locations gives an attacker direct access to the stored credentials.
+
+### Implemented Solution: In-Memory Module Closure
+
+- The access token (`accessToken`) is stored exclusively in a local variable within the module scope of [`src/lib/api.js`](src/lib/api.js):
+
   ```javascript
   let inMemoryAccessToken = null;
 
@@ -46,24 +56,34 @@
     return inMemoryAccessToken;
   }
   ```
-- متغیر `inMemoryAccessToken` مستقیماً از بیرون ماژول قابل دسترسی نیست و فقط از طریق اینترفیس‌های معتبر خوانده و نوشته می‌شود.
-- در کنار توکن Bearer درون حافظه، سرور کوکی امن سشن (`HttpOnly; Secure; SameSite=Lax`) تنظیم می‌کند؛ بنابراین در درخواست‌های Axios و `fetch` مقدار `withCredentials: true` فعال است تا احراز هویت دوگانه به درستی انجام گیرد.
-- هنگام خروج از حساب (`logout`) یا دریافت خطای `401 Unauthorized` در Axios interceptor، توکن به صورت آنی صفر شده و سشن کاربر خاتمه می‌یابد.
+
+- The `inMemoryAccessToken` variable cannot be accessed directly from outside the module. It can only be read or updated through the exported interface functions.
+
+- In addition to the in-memory Bearer token, the server sets a secure session cookie using `HttpOnly; Secure; SameSite=Lax`. Consequently, `withCredentials: true` is enabled for Axios requests, and credentials are included in `fetch` requests to support dual authentication.
+
+- When the user logs out or an Axios interceptor receives a `401 Unauthorized` response, the in-memory token is immediately cleared and the user session is terminated.
 
 ---
 
-## ۳. معماری ارسال هدر در وب‌سوکت (WebSocket Authentication)
+## 3. WebSocket Authentication & Header Forwarding Architecture
 
-### محدودیت پروتکل در مرورگرها
-بر اساس استاندارد W3C برای API شیء `new WebSocket(url, [protocols])` در مرورگرهای وب، امکان پاس دادن مستقیم آبجکت هدرهای سفارشی HTTP (نظیر هدر `Authorization`) وجود ندارد:
+### Browser Protocol Limitations
+
+According to the browser WebSocket API, the standard `new WebSocket(url, protocols)` constructor does not support passing arbitrary custom HTTP headers, such as the `Authorization` header, directly from browser JavaScript.
+
 ```javascript
-// غیراستاندارد و توسط مرورگر پشتیبانی نمی‌شود:
-new WebSocket(url, { headers: { ... } }); // TypeError در مروگر
+// Unsupported by the standard browser WebSocket API:
+new WebSocket(url, {
+  headers: { ... }
+}); // TypeError in browsers
 ```
 
-### راهکار حل معماری در این پروژه:
-۱. **کلاینت فرانت‌اند (`src/lib/socket.js`)**:
-یک ابزار سفارشی و انتزاعی به نام `createWebSocket(endpoint, options)` طراحی شده که پارامتر `headers: { Authorization: \`Bearer ${token}\` }` را دقیقاً طبق نیازمندی پروژه دریافت می‌کند:
+### Implemented Architectural Solution
+
+#### 1. Frontend Client (`src/lib/socket.js`)
+
+A custom abstraction named `createWebSocket(endpoint, options)` has been implemented. It accepts a `headers` parameter containing the required authorization information:
+
 ```javascript
 import { createWebSocket } from "../lib/socket";
 
@@ -74,8 +94,12 @@ const socket = createWebSocket("/ws/echo", {
 });
 ```
 
-۲. **پروکسی توسعه و پیش‌نمایش در Vite (`vite.config.js`)**:
-پلاگین اختصاصی `websocketAuthProxyPlugin` با استفاده از کتابخانه استاندارد `ws` بر روی سرور توسعه و پیش‌نمایش Vite قرار داده شده است. هنگام برقراری اتصال وب‌سوکت از سمت مرورگر، پلاگین توکن احراز هویت را شناسایی کرده و در فرآیند ارتقای پروتکل (HTTP Upgrade Handshake) هدر زیر را به سرور بالادستی (`wss://ts.idicorp.ir`) الصاق می‌کند:
+#### 2. Vite Development and Preview Proxy (`vite.config.js`)
+
+A custom plugin named `websocketAuthProxyPlugin` has been implemented using the standard `ws` library and integrated into the Vite development and preview servers.
+
+When the browser initiates a WebSocket connection, the plugin extracts the authentication token and attaches the following headers during the HTTP Upgrade handshake to the upstream server at `wss://ts.idicorp.ir`:
+
 ```javascript
 const upstream = new WebSocket(targetUrl, {
   headers: {
@@ -85,8 +109,10 @@ const upstream = new WebSocket(targetUrl, {
 });
 ```
 
-۳. **تنظیمات محیط استقرار در سرورهای Production (Nginx Reverse Proxy)**:
-برای محیط‌های عملیاتی نیز، وب‌سرور/پروکسی معکوس (مانند Nginx یا Envoy) همین وظیفه را بر عهده می‌گیرد:
+#### 3. Production Deployment Configuration (Nginx Reverse Proxy)
+
+In production environments, a reverse proxy such as Nginx or Envoy can perform the same header-forwarding operation:
+
 ```nginx
 location /ws/ {
     proxy_pass https://ts.idicorp.ir/ws/;
@@ -101,47 +127,53 @@ location /ws/ {
 
 ---
 
-## ۴. بازبینی کدهای برنامه نویس جونیور و اصلاحات انجام‌شده
+## 4. Code Review: Junior Implementation vs. Senior-Level Improvements
 
-| شماره | مشکل کد قبلی (Junior Code) | اصلاح اعمال‌شده (Senior Solution) |
+| # | Previous Issue (Junior Implementation) | Applied Improvement (Senior-Level Solution) |
 |---|---|---|
-| ۱ | ذخیره توکن در `sessionStorage` (آسیب‌پذیر به XSS) | بازنویسی کامل به مدل In-Memory Closure در `src/lib/api.js` |
-| ۲ | عدم ارسال هدر Authorization در اتصال Echo WS و دریافت ۴۰۳ | ایجاد ماژول `createWebSocket` و پل ارتباطی Vite proxy با هدر Bearer |
-| ۳ | خطای عدم ارسال به موقع توکن ماشین‌حساب (۱ ثانیه اول) | بررسی `readyState === WebSocket.OPEN` فوری و اتصال امن پیام آغازین |
-| ۴ | خطاهای هشداری React 19 در ESLint (`set-state-in-effect`, `purity`) | انتقال فراخوانی کپچا به بیرون کامپوننت و مدیریت بدون side-effect سنکرون |
-| ۵ | نشتی حافظه در Echo Streaming هنگام خروج از صفحه | استفاده از `AbortController` و لغو درخواست در `useEffect cleanup` |
-| ۶ | استفاده از `window.confirm` مسدودکننده در حذف تسک | ساخت مدال تأییدیه زیبا، دسترس‌پذیر (A11y) و هماهنگ با دیزاین سیستم |
-| ۷ | خطاهای شبکه بدون ترجمه و سردرگمی کاربر | تابع متمرکز `getErrorMessage` با پیام‌های شفاف فارسی بر اساس پاسخ API |
-| ۸ | نمایش تاریخ‌های میلادی خام یا ناقص | فرمت‌دهی کامل تاریخ‌های شمسی با استفاده از `Intl.DateTimeFormat` |
+| 1 | Authentication tokens stored in `sessionStorage`, exposing them to potential XSS attacks. | Replaced token storage with an in-memory module closure in `src/lib/api.js`. |
+| 2 | Missing `Authorization` header in the Echo WebSocket connection, resulting in HTTP 403 errors. | Introduced the `createWebSocket` module and a Vite proxy bridge for forwarding Bearer authentication headers. |
+| 3 | Calculator WebSocket token not being sent promptly during the first second after connection. | Added an immediate `readyState === WebSocket.OPEN` check and reliable handling of the initial authentication message. |
+| 4 | React 19 ESLint warnings, including `set-state-in-effect` and `purity` violations. | Moved CAPTCHA generation outside the component and implemented state management without synchronous side effects. |
+| 5 | Memory leaks in Echo Streaming when navigating away from the page. | Integrated `AbortController` and request cancellation in the `useEffect` cleanup function. |
+| 6 | Blocking `window.confirm` dialogs used for task deletion. | Implemented a visually polished, accessible confirmation modal consistent with the design system. |
+| 7 | Network errors displayed without translation, causing user confusion. | Introduced a centralized `getErrorMessage` function that maps API responses to clear, meaningful Persian messages. |
+| 8 | Raw or incomplete Gregorian date displays. | Implemented full Persian (Jalali) date formatting using `Intl.DateTimeFormat`. |
 
 ---
 
-## ۵. راهنمای نصب، اجرا و تست
+## 5. Installation, Execution & Testing Guide
 
-### پیش‌نیازها
-- **Node.js**: نسخه ۱۸ به بالا
-- **npm**: نسخه ۹ به بالا
+### Prerequisites
 
-### دستورات اجرایی
+- **Node.js:** Version 18 or later.
+- **npm:** Version 9 or later.
+
+### Available Commands
 
 ```bash
-# نصب وابستگی‌ها
+# Install dependencies
 npm install
 
-# اجرای سرور توسعه با پشتیبانی از وب‌سوکت پروکسی هدرها
+# Start the development server with WebSocket header proxy support
 npm run dev
 
-# بررسی کیفیت کد و استاندارد ESLint (بدون خطا یا هشدار)
+# Run ESLint to check code quality
 npm run lint
 
-# بیلد نهایی پروژه
+# Build the production bundle
 npm run build
 
-# اجرای پیش‌نمایش نسخه بیلد شده
+# Preview the production build locally
 npm run preview
 ```
 
-### اطلاعات حساب تست پیش‌فرض
-- **نام کاربری**: `admin`
-- **رمز عبور**: `admin`
-- **کپچا**: پاسخ محاسبه ریاضی نمایش داده شده در تصویر
+### Default Test Account
+
+- **Username:** `admin`
+- **Password:** `admin`
+- **CAPTCHA:** Enter the result of the mathematical expression displayed in the CAPTCHA.
+
+---
+
+*This documentation describes the intended architecture and implementation of the IDICorp Frontend Challenge. Production behavior depends on the actual deployment configuration and the availability of the upstream API services.*
