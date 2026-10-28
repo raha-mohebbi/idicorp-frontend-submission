@@ -41,7 +41,9 @@ export default function CalculatorPage() {
 
   useEffect(() => {
     return () => {
+      pendingRef.current = false;
       socketRef.current?.close();
+      socketRef.current = null;
     };
   }, []);
 
@@ -67,6 +69,7 @@ export default function CalculatorPage() {
 
   function resetCalculator() {
     if (connecting) return;
+
     setNumbers(["", ""]);
     setResult(null);
     setError("");
@@ -80,13 +83,6 @@ export default function CalculatorPage() {
 
     if (pendingRef.current) {
       setError("درخواست قبلی هنوز در حال پردازش است.");
-      return;
-    }
-
-    const token = getAccessToken();
-
-    if (!token) {
-      setError("نشست ورود پیدا نشد. خارج شو و دوباره وارد شو.");
       return;
     }
 
@@ -114,8 +110,15 @@ export default function CalculatorPage() {
       return;
     }
 
-    setConnecting(true);
+    const token = getAccessToken();
+
+    if (!token) {
+      setError("توکن ورود در دسترس نیست. دوباره وارد پنل شو.");
+      return;
+    }
+
     pendingRef.current = true;
+    setConnecting(true);
 
     let socket;
 
@@ -125,84 +128,140 @@ export default function CalculatorPage() {
     } catch {
       pendingRef.current = false;
       setConnecting(false);
-      setError("اتصال WebSocket ساخته نشد.");
+      setError("ساخت اتصال WebSocket ناموفق بود.");
       return;
     }
 
     let authenticated = false;
-    let requestSent = false;
-    let completed = false;
+    let finished = false;
+    let timeoutId;
+
+    function cleanup() {
+      window.clearTimeout(timeoutId);
+      pendingRef.current = false;
+      setConnecting(false);
+
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
+    }
+
+    function finishWithError(message) {
+      if (finished) return;
+
+      finished = true;
+      cleanup();
+      setError(message);
+
+      if (
+        socket.readyState === WebSocket.OPEN ||
+        socket.readyState === WebSocket.CONNECTING
+      ) {
+        socket.close();
+      }
+    }
+
+    timeoutId = window.setTimeout(() => {
+      finishWithError("زمان انتظار برای پاسخ ماشین‌حساب به پایان رسید.");
+    }, 10000);
 
     socket.onopen = () => {
-      socket.send(JSON.stringify({ token }));
+      try {
+        // سرور انتظار دارد توکن در اولین پیام WebSocket ارسال شود.
+        socket.send(JSON.stringify({ token }));
+      } catch {
+        finishWithError("ارسال اطلاعات احراز هویت ناموفق بود.");
+      }
     };
 
     socket.onmessage = (event) => {
-      let message;
+      if (finished) return;
+
+      let data;
 
       try {
-        message = JSON.parse(event.data);
+        data = JSON.parse(event.data);
       } catch {
-        completed = true;
-        setError("پاسخ نامعتبر از سرور دریافت شد.");
-        pendingRef.current = false;
-        setConnecting(false);
-        socket.close();
+        finishWithError("پاسخ نامعتبر از سرویس ماشین‌حساب دریافت شد.");
         return;
       }
 
-      if (message.type === "ready") {
-        authenticated = true;
+      if (!data || typeof data !== "object") {
+        finishWithError("ساختار پاسخ سرویس معتبر نیست.");
+        return;
+      }
 
-        if (!requestSent) {
-          requestSent = true;
-          socket.send(JSON.stringify({ operation, numbers: values }));
+      if (!authenticated) {
+        if (data.type === "ready") {
+          authenticated = true;
+
+          try {
+            socket.send(
+              JSON.stringify({
+                operation,
+                numbers: values,
+              }),
+            );
+          } catch {
+            finishWithError("ارسال درخواست محاسبه ناموفق بود.");
+          }
+
+          return;
+        }
+
+        if (data.type === "error" || data.error) {
+          finishWithError(
+            data.message ||
+              (typeof data.error === "string" ? data.error : null) ||
+              "احراز هویت WebSocket ناموفق بود.",
+          );
         }
 
         return;
       }
 
-      if (
-        typeof message.result === "number" &&
-        Number.isFinite(message.result)
-      ) {
-        completed = true;
-        setResult(message.result);
-        setError("");
-        pendingRef.current = false;
-        setConnecting(false);
-        socket.close();
+      if (data.type === "error" || data.error) {
+        finishWithError(
+          data.message ||
+            (typeof data.error === "string" ? data.error : null) ||
+            "محاسبه در سرویس ناموفق بود.",
+        );
         return;
       }
 
-      if (message.error) {
-        completed = true;
-        setError(
-          "سرور درخواست محاسبه را نپذیرفت. ورودی‌ها را بررسی کن.",
-        );
-        pendingRef.current = false;
-        setConnecting(false);
-        socket.close();
+      const calculatedResult =
+        data.result ?? data.value ?? data.output;
+
+      if (
+        calculatedResult === undefined ||
+        calculatedResult === null ||
+        (typeof calculatedResult !== "number" &&
+          typeof calculatedResult !== "string")
+      ) {
+        finishWithError("پاسخ سرویس فاقد نتیجه محاسبه معتبر است.");
+        return;
       }
+
+      finished = true;
+      cleanup();
+      setResult(calculatedResult);
+      socket.close();
     };
 
     socket.onerror = () => {
-      setError("ارتباط با ماشین‌حساب برقرار نشد.");
-      pendingRef.current = false;
-      setConnecting(false);
+      finishWithError("اتصال به WebSocket ناموفق بود.");
     };
 
-    socket.onclose = () => {
-      pendingRef.current = false;
-      setConnecting(false);
+    socket.onclose = (event) => {
+      if (finished) return;
 
-      if (!completed) {
-        setError(
-          authenticated
-            ? "اتصال پیش از دریافت نتیجه بسته شد. دوباره تلاش کن."
-            : "احراز هویت WebSocket ناموفق بود یا اتصال بسته شد.",
-        );
-      }
+      finishWithError(
+        !authenticated
+          ? "اتصال WebSocket پیش از تأیید احراز هویت بسته شد."
+          : event.code === 1008
+            ? "سرور دسترسی به درخواست را رد کرد."
+            : "ارتباط WebSocket پیش از دریافت نتیجه قطع شد.",
+      );
     };
   }
 
@@ -215,7 +274,6 @@ export default function CalculatorPage() {
       dir="rtl"
       className="min-h-full space-y-7 pb-10 text-[#1D2238]"
     >
-      {/* Page header */}
       <header className="relative overflow-hidden rounded-3xl bg-[#1D2238] p-6 text-white shadow-xl shadow-[#1D2238]/10 sm:p-8">
         <div
           aria-hidden="true"
@@ -263,7 +321,6 @@ export default function CalculatorPage() {
         </div>
       </header>
 
-      {/* Connection status */}
       <div
         role="status"
         className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3.5 ${
@@ -306,7 +363,6 @@ export default function CalculatorPage() {
         />
       </div>
 
-      {/* Calculator workspace */}
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
         <section className="min-w-0 rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-7">
           <div className="mb-7 flex items-start justify-between gap-3">
@@ -329,7 +385,6 @@ export default function CalculatorPage() {
           </div>
 
           <form onSubmit={handleCalculate} className="space-y-6">
-            {/* Operation selector */}
             <fieldset disabled={connecting} className="space-y-3">
               <legend className="mb-3 text-sm font-bold text-[#33384C]">
                 انتخاب عملیات
@@ -361,7 +416,6 @@ export default function CalculatorPage() {
                       >
                         <Icon size={19} />
                       </span>
-
                       <span className="text-sm font-bold">{item.label}</span>
                     </button>
                   );
@@ -369,7 +423,6 @@ export default function CalculatorPage() {
               </div>
             </fieldset>
 
-            {/* Numbers */}
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-bold text-[#33384C]">
@@ -433,7 +486,6 @@ export default function CalculatorPage() {
               </button>
             </div>
 
-            {/* Inline error */}
             {error && (
               <div
                 role="alert"
@@ -444,32 +496,21 @@ export default function CalculatorPage() {
               </div>
             )}
 
-            {/* Calculate button */}
             <button
               type="submit"
               disabled={connecting}
               className="group flex w-full items-center justify-center gap-2.5 rounded-2xl bg-[#E20912] px-5 py-4 text-sm font-extrabold text-white shadow-lg shadow-[#E20912]/15 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#C90710] hover:shadow-xl hover:shadow-[#E20912]/20 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E20912]/20 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
             >
-              {connecting ? (
-                <>
-                  <LoaderCircle size={19} className="animate-spin" />
-                  در حال محاسبه...
-                </>
-              ) : (
-                <>
-                  <Calculator size={19} />
-                  محاسبه نتیجه
-                  <ArrowLeft
-                    size={18}
-                    className="transition-transform group-hover:-translate-x-1"
-                  />
-                </>
-              )}
+              <Calculator size={19} />
+              محاسبه نتیجه
+              <ArrowLeft
+                size={18}
+                className="transition-transform group-hover:-translate-x-1"
+              />
             </button>
           </form>
         </section>
 
-        {/* Result panel */}
         <aside className="space-y-5 xl:sticky xl:top-6">
           <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
             <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
@@ -499,16 +540,13 @@ export default function CalculatorPage() {
                     <CircleCheck size={16} />
                     محاسبه موفق بود
                   </div>
-
                   <p className="mb-2 text-xs text-slate-500">مقدار نهایی</p>
-
                   <p
                     dir="ltr"
                     className="break-all text-3xl font-black tracking-tight text-[#1D2238] sm:text-4xl"
                   >
                     {String(result)}
                   </p>
-
                   <div className="mt-5 inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">
                     {selectedOperation?.label}
                     <span className="text-[#E20912]">
@@ -532,7 +570,6 @@ export default function CalculatorPage() {
             </div>
           </section>
 
-          {/* Information card */}
           <section className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm">
             <h3 className="mb-4 text-sm font-extrabold">راهنمای استفاده</h3>
 
@@ -567,7 +604,7 @@ export default function CalculatorPage() {
 
               <div className="flex items-start gap-3">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50 text-[#E20912]">
-                  <ShieldCheckIcon />
+                  <CircleCheck size={15} />
                 </span>
                 <div>
                   <p className="text-xs font-bold text-[#33384C]">
@@ -584,8 +621,4 @@ export default function CalculatorPage() {
       </div>
     </main>
   );
-}
-
-function ShieldCheckIcon() {
-  return <CircleCheck size={15} />;
 }

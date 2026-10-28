@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import {
   Radio,
@@ -12,7 +11,7 @@ import {
   Waves,
   Sparkles,
 } from "lucide-react";
-import { getAccessToken, getErrorMessage } from "../../lib/api";
+import { getAccessToken } from "../../lib/api";
 
 const API_BASE_URL = import.meta.env.DEV
   ? ""
@@ -35,6 +34,11 @@ export default function StreamingPage() {
       return;
     }
 
+    if (text.length > 20000) {
+      setError("حداکثر طول متن ورودی ۲۰٬۰۰۰ کاراکتر است.");
+      return;
+    }
+
     if (loading) return;
 
     setLoading(true);
@@ -42,17 +46,22 @@ export default function StreamingPage() {
     setResponse("");
     setStatus("در حال ارسال درخواست...");
 
-    const token = getAccessToken();
+    let reader;
 
     try {
+      const token = getAccessToken();
+
+      if (!token) {
+        throw new Error(
+          "توکن ورود پیدا نشد. ابتدا از حساب خارج شو و دوباره وارد شو.",
+        );
+      }
+
       const headers = {
         "Content-Type": "text/plain; charset=utf-8",
         Accept: "*/*",
+        Authorization: `Bearer ${token}`,
       };
-
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
 
       const result = await fetch(`${API_BASE_URL}/api/echo/stream`, {
         method: "POST",
@@ -65,33 +74,53 @@ export default function StreamingPage() {
         let message = "";
 
         try {
-          const data = await result.json();
-          message =
-            typeof data?.detail === "string" ? data.detail : "";
+          const contentType = result.headers.get("content-type") || "";
+
+          if (contentType.includes("application/json")) {
+            const data = await result.json();
+            message =
+              typeof data?.detail === "string"
+                ? data.detail
+                : typeof data?.message === "string"
+                  ? data.message
+                  : "";
+          } else {
+            message = (await result.text()).slice(0, 300);
+          }
         } catch {
-          // The error response may not be JSON.
+      //if parsing fails, ignore and use default message
         }
 
         if (result.status === 401) {
           throw new Error(
-            "نشست معتبر نیست یا منقضی شده است. دوباره وارد شو."
+            "نشست یا توکن معتبر نیست یا منقضی شده است. دوباره وارد شو.",
           );
         }
 
         if (result.status === 403) {
-          throw new Error("اجازهٔ دسترسی به سرویس Streaming وجود ندارد.");
+          throw new Error(
+            "اجازه دسترسی به سرویس Streaming وجود ندارد.",
+          );
+        }
+
+        if (result.status === 404) {
+          throw new Error("مسیر سرویس Streaming پیدا نشد.");
         }
 
         if (result.status === 422) {
-          throw new Error("متن ارسال‌شده معتبر نیست.");
+          throw new Error(
+            message || "متن یا قالب درخواست توسط سرور پذیرفته نشد.",
+          );
         }
 
         if (result.status >= 500) {
-          throw new Error("خطایی در سرویس رخ داده است.");
+          throw new Error(
+            message || "خطایی در سرویس سرور رخ داده است.",
+          );
         }
 
         throw new Error(
-          message || `درخواست ناموفق بود (${result.status}).`
+          message || `درخواست ناموفق بود (${result.status}).`,
         );
       }
 
@@ -100,43 +129,43 @@ export default function StreamingPage() {
       }
 
       setStatus("در حال دریافت پاسخ...");
-      const reader = result.body.getReader();
-      const decoder = new TextDecoder();
 
+      reader = result.body.getReader();
+
+      const decoder = new TextDecoder("utf-8");
       let fullText = "";
 
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
+      while (true) {
+        const { done, value } = await reader.read();
 
-          if (done) break;
+        if (done) break;
 
-          fullText += decoder.decode(value, { stream: true });
-          setResponse(fullText);
-        }
-
-        fullText += decoder.decode();
+        fullText += decoder.decode(value, { stream: true });
         setResponse(fullText);
-      } finally {
-        reader.releaseLock();
       }
 
+      fullText += decoder.decode();
+      setResponse(fullText);
       setStatus("پاسخ با موفقیت دریافت شد.");
     } catch (err) {
       setStatus("");
 
       if (err instanceof TypeError) {
         setError(
-          "اتصال به سرور برقرار نشد. اینترنت، پراکسی یا تنظیمات دسترسی را بررسی کن."
+          "اتصال به سرور برقرار نشد. اینترنت، آدرس API یا تنظیمات CORS را بررسی کن.",
         );
       } else {
-        setError(
-          err.message ||
-            getErrorMessage(err) ||
-            "ارسال درخواست ناموفق بود."
-        );
+        setError(err.message || "ارسال درخواست ناموفق بود.");
       }
     } finally {
+      if (reader) {
+        try {
+          reader.releaseLock();
+        } catch {
+          //maybe already released or not supported
+        }
+      }
+
       setLoading(false);
     }
   }
@@ -156,7 +185,6 @@ export default function StreamingPage() {
       className="min-h-screen bg-[#F5F6FA] px-4 py-6 text-[#1D2238] sm:px-6 lg:px-8"
     >
       <div className="mx-auto max-w-6xl space-y-6">
-        {/* Header */}
         <header className="relative overflow-hidden rounded-3xl bg-[#1D2238] p-6 text-white shadow-lg shadow-slate-900/10 sm:p-8">
           <div className="pointer-events-none absolute -left-12 -top-20 h-64 w-64 rounded-full bg-white/[0.04] blur-2xl" />
           <div className="pointer-events-none absolute -bottom-20 right-1/3 h-48 w-48 rounded-full bg-[#E20912]/20 blur-3xl" />
@@ -196,7 +224,6 @@ export default function StreamingPage() {
           </div>
         </header>
 
-        {/* Request form */}
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
           <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-5 sm:px-7">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1D2238]/[0.06] text-[#1D2238]">
@@ -273,7 +300,6 @@ export default function StreamingPage() {
           </form>
         </section>
 
-        {/* Status */}
         {(status || error) && (
           <div
             role={error ? "alert" : "status"}
@@ -298,7 +324,6 @@ export default function StreamingPage() {
           </div>
         )}
 
-        {/* Streaming response */}
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
             <div className="flex items-center gap-3">

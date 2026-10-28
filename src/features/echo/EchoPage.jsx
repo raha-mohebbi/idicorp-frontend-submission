@@ -12,13 +12,10 @@ import {
   CircleAlert,
   LoaderCircle,
   Trash2,
-  ArrowDown,
   ShieldCheck,
 } from "lucide-react";
 
-const WS_URL = import.meta.env.DEV
-  ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws/echo`
-  : "wss://ts.idicorp.ir/ws/echo";
+const WS_URL = "wss://ts.idicorp.ir/ws/echo";
 
 export default function EchoPage() {
   const [message, setMessage] = useState("");
@@ -31,12 +28,16 @@ export default function EchoPage() {
   const messagesEndRef = useRef(null);
   const manuallyDisconnectedRef = useRef(false);
 
-  useEffect(() => {
-    return () => {
-      manuallyDisconnectedRef.current = true;
-      socketRef.current?.close();
-    };
-  }, []);
+  function addMessage(kind, text) {
+    setMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        kind,
+        text,
+      },
+    ]);
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -45,10 +46,19 @@ export default function EchoPage() {
     });
   }, [messages]);
 
+  useEffect(() => {
+    return () => {
+      manuallyDisconnectedRef.current = true;
+      socketRef.current?.close();
+    };
+  }, []);
+
   function connect() {
+    const currentSocket = socketRef.current;
+
     if (
-      socketRef.current?.readyState === WebSocket.OPEN ||
-      socketRef.current?.readyState === WebSocket.CONNECTING
+      currentSocket?.readyState === WebSocket.OPEN ||
+      currentSocket?.readyState === WebSocket.CONNECTING
     ) {
       return;
     }
@@ -60,6 +70,7 @@ export default function EchoPage() {
     let socket;
 
     try {
+      
       socket = new WebSocket(WS_URL);
       socketRef.current = socket;
     } catch {
@@ -71,14 +82,8 @@ export default function EchoPage() {
     socket.onopen = () => {
       setConnecting(false);
       setConnected(true);
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          kind: "system",
-          text: "اتصال WebSocket برقرار شد.",
-        },
-      ]);
+
+      addMessage("system", "اتصال WebSocket برقرار شد.");
     };
 
     socket.onmessage = (event) => {
@@ -88,14 +93,7 @@ export default function EchoPage() {
         const parsed = JSON.parse(event.data);
 
         if (parsed.type === "ready") {
-          setMessages((current) => [
-            ...current,
-            {
-              id: crypto.randomUUID(),
-              kind: "system",
-              text: "سرویس Echo آماده دریافت پیام است.",
-            },
-          ]);
+          addMessage("system", "سرویس Echo آماده دریافت پیام است.");
           return;
         }
 
@@ -103,21 +101,16 @@ export default function EchoPage() {
           text = parsed.message;
         }
       } catch {
-        // Non-JSON messages are treated as plain text.
+        // Non-JSON responses are displayed as plain text.
       }
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          kind: "received",
-          text: String(text),
-        },
-      ]);
+      addMessage("received", String(text));
     };
 
     socket.onerror = () => {
-      setError("ارتباط با سرویس Echo با خطا مواجه شد.");
+      setError(
+        "ارتباط با سرویس Echo برقرار نشد. وضعیت سرور و احراز هویت را بررسی کن.",
+      );
     };
 
     socket.onclose = () => {
@@ -129,14 +122,7 @@ export default function EchoPage() {
       }
 
       if (!manuallyDisconnectedRef.current) {
-        setMessages((current) => [
-          ...current,
-          {
-            id: crypto.randomUUID(),
-            kind: "system",
-            text: "اتصال سرویس بسته شد.",
-          },
-        ]);
+        addMessage("system", "اتصال سرویس بسته شد.");
       }
     };
   }
@@ -149,19 +135,13 @@ export default function EchoPage() {
 
     setConnected(false);
     setConnecting(false);
+    setError("");
 
     if (socket) {
       socket.close();
     }
 
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        kind: "system",
-        text: "اتصال به سرویس Echo قطع شد.",
-      },
-    ]);
+    addMessage("system", "اتصال به سرویس Echo قطع شد.");
   }
 
   function sendMessage(event) {
@@ -182,15 +162,7 @@ export default function EchoPage() {
     try {
       socketRef.current.send(text);
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          kind: "sent",
-          text,
-        },
-      ]);
-
+      addMessage("sent", text);
       setMessage("");
       setError("");
     } catch {
@@ -208,7 +180,6 @@ export default function EchoPage() {
       dir="rtl"
       className="min-h-full space-y-7 pb-10 text-[#1D2238]"
     >
-      {/* Header */}
       <header className="relative overflow-hidden rounded-3xl bg-[#1D2238] p-6 text-white shadow-xl shadow-[#1D2238]/10 sm:p-8">
         <div
           aria-hidden="true"
@@ -257,7 +228,6 @@ export default function EchoPage() {
         </div>
       </header>
 
-      {/* Connection status */}
       <section
         role="status"
         className={`flex flex-col justify-between gap-4 rounded-2xl border p-4 sm:flex-row sm:items-center ${
@@ -328,9 +298,7 @@ export default function EchoPage() {
         </span>
       </section>
 
-      {/* Chat panel */}
       <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
-        {/* Chat toolbar */}
         <div className="flex flex-col justify-between gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:px-7">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#1D2238] text-white">
@@ -369,7 +337,7 @@ export default function EchoPage() {
               <button
                 type="button"
                 onClick={connect}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#E20912] px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-[#E20912]/15 transition hover:bg-[#C90710] disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#E20912] px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-[#E20912]/15 transition hover:bg-[#C90710]"
               >
                 <Plug size={15} />
                 اتصال به سرویس
@@ -378,7 +346,6 @@ export default function EchoPage() {
           </div>
         </div>
 
-        {/* Message history */}
         <div
           className="min-h-[320px] max-h-[560px] space-y-5 overflow-y-auto bg-[#F8F9FC] p-4 sm:min-h-[380px] sm:p-7"
           aria-label="تاریخچه پیام‌ها"
@@ -436,11 +403,7 @@ export default function EchoPage() {
                   key={item.id}
                   className={`flex ${sent ? "justify-start" : "justify-end"}`}
                 >
-                  <div
-                    className={`w-fit max-w-[88%] min-w-0 sm:max-w-[75%] ${
-                      sent ? "items-start" : "items-end"
-                    } flex flex-col`}
-                  >
+                  <div className="flex w-fit max-w-[88%] min-w-0 flex-col sm:max-w-[75%]">
                     <div
                       className={`mb-2 flex items-center gap-2 px-1 text-[11px] font-bold ${
                         sent ? "text-[#E20912]" : "text-slate-500"
@@ -474,7 +437,6 @@ export default function EchoPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Composer */}
         <div className="border-t border-slate-100 bg-white p-4 sm:p-6">
           {error && (
             <div

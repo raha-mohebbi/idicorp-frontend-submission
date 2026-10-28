@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Eye,
   EyeOff,
@@ -13,7 +13,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   api,
-  clearAccessToken,
   getErrorMessage,
   setAccessToken,
 } from "../../lib/api";
@@ -45,7 +44,7 @@ export default function LoginPage({ onLogin }) {
     },
   });
 
-  async function loadCaptcha() {
+  const loadCaptcha = useCallback(async () => {
     setCaptchaLoading(true);
     setCaptchaError("");
     setCaptcha(null);
@@ -53,70 +52,89 @@ export default function LoginPage({ onLogin }) {
     try {
       const { data } = await api.get("/api/auth/login", {
         params: { _t: Date.now() },
+        withCredentials: true,
       });
-      setCaptcha(data);
-    } catch {
-      setCaptchaError("دریافت کپچا ناموفق بود.");
+
+      if (
+        typeof data?.captcha !== "string" ||
+        !data.captcha.startsWith("data:image/") ||
+        !data?.salt
+      ) {
+        throw new Error("پاسخ دریافتی کپچا معتبر نیست.");
+      }
+
+      setCaptcha({
+        captcha: data.captcha,
+        salt: data.salt,
+      });
+    } catch (error) {
+      setCaptcha(null);
+      setCaptchaError(
+        error.response
+          ? getErrorMessage(error)
+          : error.message ||
+              "دریافت کپچا ناموفق بود. اتصال سرور و تنظیمات CORS را بررسی کنید.",
+      );
     } finally {
       setCaptchaLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchCaptcha() {
-      try {
-        const { data } = await api.get("/api/auth/login", {
-          params: { _t: Date.now() },
-        });
-
-        if (!cancelled) {
-          setCaptcha(data);
-          setCaptchaError("");
-        }
-      } catch {
-        if (!cancelled) {
-          setCaptchaError("دریافت کپچا ناموفق بود.");
-        }
-      } finally {
-        if (!cancelled) {
-          setCaptchaLoading(false);
-        }
-      }
-    }
-
-    fetchCaptcha();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    loadCaptcha();
+  }, [loadCaptcha]);
 
   async function onSubmit(values) {
     setLoginError("");
 
-    try {
-      const { data } = await api.post("/api/auth/login", {
-        username: values.username,
-        password: values.password,
-        salt: captcha.salt,
-        captcha_answer: values.captcha_answer,
-      });
+    if (!captcha?.salt || !captcha?.captcha) {
+      setLoginError(
+        "کد امنیتی آماده نیست. لطفاً کپچای جدید دریافت کنید.",
+      );
+      return;
+    }
 
-      if (!data?.access_token) {
-        throw new Error("پاسخ ورود فاقد access token است.");
+    try {
+      const response = await api.post(
+        "/api/auth/login",
+        {
+          username: values.username.trim(),
+          password: values.password,
+          salt: captcha.salt,
+          captcha_answer: values.captcha_answer.trim(),
+        },
+        {
+          withCredentials: true,
+        },
+      );
+
+      const token = response.data?.access_token;
+
+      if (typeof token !== "string" || !token) {
+        throw new Error(
+          "ورود پاسخ موفق داد، اما access_token در پاسخ وجود ندارد.",
+        );
       }
 
-      setAccessToken(data.access_token);
-      onLogin(data);
+      
+      setAccessToken(token);
+
+      reset({
+        username: values.username,
+        password: "",
+        captcha_answer: "",
+      });
+
+      onLogin?.();
     } catch (error) {
-      clearAccessToken();
+
+      setAccessToken(null);
 
       setLoginError(
         error.response
           ? getErrorMessage(error)
-          : error.message || getErrorMessage(error),
+          : error.message ||
+              "ورود ناموفق بود. اتصال سرور را بررسی کنید.",
       );
 
       reset({
@@ -141,14 +159,12 @@ export default function LoginPage({ onLogin }) {
       dir="rtl"
       className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#F5F6FA] px-4 py-10 font-sans text-[#1D2238] selection:bg-[#E20912]/15 selection:text-[#1D2238]"
     >
-      {/* Background decoration */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
       >
         <div className="absolute -right-32 -top-36 h-[420px] w-[420px] rounded-full bg-[#E20912]/[0.06] blur-3xl" />
         <div className="absolute -bottom-40 -left-28 h-[450px] w-[450px] rounded-full bg-[#1D2238]/[0.07] blur-3xl" />
-
         <div
           className="absolute inset-0 opacity-[0.035]"
           style={{
@@ -163,7 +179,6 @@ export default function LoginPage({ onLogin }) {
         aria-labelledby="login-title"
         className="w-full max-w-[460px] animate-[fadeIn_.5s_ease-out] rounded-[28px] border border-white/80 bg-white/95 p-6 shadow-[0_24px_80px_-24px_rgba(29,34,56,0.20)] backdrop-blur-xl sm:p-10"
       >
-        {/* Brand */}
         <div className="mb-9 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1D2238] text-white shadow-lg shadow-[#1D2238]/20">
@@ -190,7 +205,6 @@ export default function LoginPage({ onLogin }) {
           </div>
         </div>
 
-        {/* Heading */}
         <div className="mb-8">
           <p className="mb-3 text-xs font-bold tracking-wide text-[#E20912]">
             به پنل خوش آمدید
@@ -208,8 +222,11 @@ export default function LoginPage({ onLogin }) {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
-          {/* Username */}
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          noValidate
+          className="space-y-5"
+        >
           <div className="space-y-2">
             <label
               htmlFor="username"
@@ -241,7 +258,6 @@ export default function LoginPage({ onLogin }) {
             )}
           </div>
 
-          {/* Password */}
           <div className="space-y-2">
             <label
               htmlFor="password"
@@ -256,9 +272,7 @@ export default function LoginPage({ onLogin }) {
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
                 placeholder="رمز عبور خود را وارد کنید"
-                className={`${inputClass(
-                  Boolean(errors.password),
-                )} pl-12`}
+                className={`${inputClass(Boolean(errors.password))} pl-12`}
                 aria-invalid={Boolean(errors.password)}
                 aria-describedby={
                   errors.password ? "password-error" : undefined
@@ -270,9 +284,13 @@ export default function LoginPage({ onLogin }) {
                 className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-[#1D2238] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E20912]/30"
                 type="button"
                 aria-label={
-                  showPassword ? "پنهان کردن رمز عبور" : "نمایش رمز عبور"
+                  showPassword
+                    ? "پنهان کردن رمز عبور"
+                    : "نمایش رمز عبور"
                 }
-                onClick={() => setShowPassword((value) => !value)}
+                onClick={() =>
+                  setShowPassword((value) => !value)
+                }
               >
                 {showPassword ? (
                   <EyeOff size={19} />
@@ -293,7 +311,6 @@ export default function LoginPage({ onLogin }) {
             )}
           </div>
 
-          {/* Captcha */}
           <div className="space-y-2">
             <label
               htmlFor="captcha_answer"
@@ -336,8 +353,9 @@ export default function LoginPage({ onLogin }) {
                 role="status"
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700"
               >
-                <span>{captchaError || "تصویر کپچا در دسترس نیست."}</span>
-
+                <span>
+                  {captchaError || "تصویر کپچا در دسترس نیست."}
+                </span>
                 <button
                   type="button"
                   onClick={loadCaptcha}
@@ -371,7 +389,6 @@ export default function LoginPage({ onLogin }) {
             )}
           </div>
 
-          {/* Login error */}
           {loginError && (
             <div
               role="alert"
@@ -384,7 +401,6 @@ export default function LoginPage({ onLogin }) {
             </div>
           )}
 
-          {/* Submit */}
           <button
             className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-[#E20912] px-5 py-4 text-sm font-bold text-white shadow-lg shadow-[#E20912]/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#C90710] hover:shadow-xl hover:shadow-[#E20912]/25 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E20912]/20 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
             type="submit"
@@ -407,7 +423,6 @@ export default function LoginPage({ onLogin }) {
           </button>
         </form>
 
-        {/* Footer */}
         <div className="mt-8 border-t border-slate-100 pt-5">
           <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
             <ShieldCheck size={16} className="text-[#1D2238]/60" />

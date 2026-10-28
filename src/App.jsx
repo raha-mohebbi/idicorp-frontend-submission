@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ListTodo,
   Calculator,
@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   ChevronLeft,
   ShieldCheck,
+  RefreshCw,
 } from "lucide-react";
 
 import LoginPage from "./features/auth/LoginPage";
@@ -16,47 +17,143 @@ import TasksPage from "./features/tasks/TasksPage";
 import CalculatorPage from "./features/calculator/CalculatorPage";
 import EchoPage from "./features/echo/EchoPage";
 import StreamingPage from "./features/echo/StreamingPage";
-import { clearAccessToken } from "./lib/api";
+import { api, clearAccessToken } from "./lib/api";
 
 const navigationItems = [
-  {
-    id: "tasks",
-    label: "مدیریت تسک‌ها",
-    icon: ListTodo,
-  },
-  {
-    id: "calculator",
-    label: "ماشین‌حساب",
-    icon: Calculator,
-  },
-  {
-    id: "echo",
-    label: "سرویس Echo",
-    icon: MessageCircle,
-  },
-  {
-    id: "streaming",
-    label: "Echo Streaming",
-    icon: Radio,
-  },
+  { id: "tasks", label: "مدیریت تسک‌ها", icon: ListTodo },
+  { id: "calculator", label: "ماشین‌حساب", icon: Calculator },
+  { id: "echo", label: "سرویس Echo", icon: MessageCircle },
+  { id: "streaming", label: "Echo Streaming", icon: Radio },
 ];
 
 export default function App() {
-  const [session, setSession] = useState(null);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [authError, setAuthError] = useState("");
   const [activePage, setActivePage] = useState("tasks");
 
-  function handleLogin(data) {
-    setSession(data);
+  async function checkAuthentication() {
+    setCheckingAuth(true);
+    setAuthError("");
+
+    try {
+   
+      await api.get("/api/tasks", {
+        withCredentials: true,
+      });
+
+      setAuthenticated(true);
+    } catch (error) {
+      const status = error.response?.status;
+
+      if (status === 401 || status === 403) {
+        
+        setAuthenticated(false);
+      } else {
+     
+        setAuthError(
+          "بررسی نشست ناموفق بود. اتصال به سرور و تنظیمات CORS را بررسی کن.",
+        );
+      }
+    } finally {
+      setCheckingAuth(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initialCheck() {
+      try {
+        await api.get("/api/tasks", {
+          withCredentials: true,
+        });
+
+        if (!cancelled) {
+          setAuthenticated(true);
+          setAuthError("");
+        }
+      } catch (error) {
+        if (cancelled) return;
+
+        const status = error.response?.status;
+
+        if (status === 401 || status === 403) {
+          setAuthenticated(false);
+        } else {
+          setAuthError(
+            "بررسی نشست ناموفق بود. اتصال به سرور و تنظیمات CORS را بررسی کن.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckingAuth(false);
+        }
+      }
+    }
+
+    initialCheck();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function handleLogin() {
+
+    setAuthenticated(true);
+    setAuthError("");
     setActivePage("tasks");
   }
 
-  function handleLogout() {
-    clearAccessToken();
-    setSession(null);
-    setActivePage("tasks");
+function handleLogout() {
+  clearAccessToken();
+  setAuthenticated(false);
+  setAuthError("");
+  setActivePage("tasks");
+}
+
+  if (checkingAuth) {
+    return (
+      <main
+        dir="rtl"
+        className="flex min-h-screen items-center justify-center bg-[#F5F6FA] text-[#1D2238]"
+      >
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-[#E20912]" />
+          <span className="text-sm font-medium">
+            در حال بررسی وضعیت ورود...
+          </span>
+        </div>
+      </main>
+    );
   }
 
-  if (!session) {
+  if (authError) {
+    return (
+      <main
+        dir="rtl"
+        className="flex min-h-screen items-center justify-center bg-[#F5F6FA] px-4 text-[#1D2238]"
+      >
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h1 className="text-lg font-bold">بررسی نشست ناموفق بود</h1>
+          <p className="mt-3 text-sm leading-7 text-slate-600">
+            {authError}
+          </p>
+          <button
+            type="button"
+            onClick={checkAuthentication}
+            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#1D2238] px-4 py-3 text-sm font-semibold text-white hover:bg-[#33384C]"
+          >
+            <RefreshCw size={16} />
+            تلاش دوباره
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (!authenticated) {
     return <LoginPage onLogin={handleLogin} />;
   }
 
@@ -70,18 +167,13 @@ export default function App() {
           : StreamingPage;
 
   return (
-    <div
-      dir="rtl"
-      className="min-h-screen bg-[#F5F6FA] text-[#1D2238]"
-    >
-      {/* Application header */}
+    <div dir="rtl" className="min-h-screen bg-[#F5F6FA] text-[#1D2238]">
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#1D2238] text-white shadow-sm">
               <LayoutDashboard size={22} />
             </div>
-
             <div className="min-w-0">
               <p className="text-[10px] font-bold tracking-[0.17em] text-slate-500 sm:text-xs">
                 IDICORP · SERVICE CONSOLE
@@ -97,7 +189,6 @@ export default function App() {
               <ShieldCheck size={15} />
               <span>محیط سرویس‌ها</span>
             </div>
-
             <button
               type="button"
               onClick={handleLogout}
@@ -111,24 +202,19 @@ export default function App() {
       </header>
 
       <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
-        {/* Page introduction */}
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold text-slate-500">
-              WORKSPACE
-            </p>
+            <p className="text-xs font-semibold text-slate-500">WORKSPACE</p>
             <h2 className="mt-1 text-base font-bold text-[#1D2238] sm:text-lg">
               فضای کاری سرویس‌ها
             </h2>
           </div>
-
           <span className="hidden items-center gap-2 text-xs text-slate-500 sm:flex">
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
             پنل آماده استفاده است
           </span>
         </div>
 
-        {/* Service navigation */}
         <nav
           aria-label="سرویس‌ها"
           className="mb-6 rounded-2xl border border-slate-200/80 bg-white p-2 shadow-sm"
@@ -160,10 +246,8 @@ export default function App() {
                     >
                       <Icon size={19} />
                     </span>
-
                     <span className="truncate">{item.label}</span>
                   </span>
-
                   {isActive && (
                     <ChevronLeft
                       size={16}
@@ -176,7 +260,6 @@ export default function App() {
           </div>
         </nav>
 
-        {/* Active service */}
         <section
           key={activePage}
           aria-label="محتوای سرویس انتخاب‌شده"
@@ -185,7 +268,6 @@ export default function App() {
           <ActivePage />
         </section>
 
-        {/* Footer */}
         <footer className="mt-10 flex flex-col gap-2 border-t border-slate-200 px-1 py-5 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
           <span>IDICorp · Service Console</span>
           <span>مدیریت یکپارچه سرویس‌ها</span>
