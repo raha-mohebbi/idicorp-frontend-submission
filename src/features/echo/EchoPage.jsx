@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 import {
   MessageCircle,
@@ -14,30 +13,21 @@ import {
   Trash2,
   ShieldCheck,
 } from "lucide-react";
-
-const WS_URL = "wss://ts.idicorp.ir/ws/echo";
+import { useEchoStore } from "../../store/useEchoStore";
 
 export default function EchoPage() {
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [connected, setConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState("");
-
-  const socketRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const manuallyDisconnectedRef = useRef(false);
 
-  function addMessage(kind, text) {
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        kind,
-        text,
-      },
-    ]);
-  }
+  const messages = useEchoStore((state) => state.messages);
+  const connected = useEchoStore((state) => state.isConnected);
+  const connecting = useEchoStore((state) => state.isConnecting);
+  const error = useEchoStore((state) => state.error);
+  const connect = useEchoStore((state) => state.connect);
+  const disconnect = useEchoStore((state) => state.disconnect);
+  const sendEchoMessage = useEchoStore((state) => state.sendMessage);
+  const clearMessages = useEchoStore((state) => state.clearMessages);
+  const clearError = useEchoStore((state) => state.clearError);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -46,133 +36,14 @@ export default function EchoPage() {
     });
   }, [messages]);
 
-  useEffect(() => {
-    return () => {
-      manuallyDisconnectedRef.current = true;
-      socketRef.current?.close();
-    };
-  }, []);
-
-  function connect() {
-    const currentSocket = socketRef.current;
-
-    if (
-      currentSocket?.readyState === WebSocket.OPEN ||
-      currentSocket?.readyState === WebSocket.CONNECTING
-    ) {
-      return;
-    }
-
-    manuallyDisconnectedRef.current = false;
-    setError("");
-    setConnecting(true);
-
-    let socket;
-
-    try {
-      
-      socket = new WebSocket(WS_URL);
-      socketRef.current = socket;
-    } catch {
-      setConnecting(false);
-      setError("ایجاد اتصال WebSocket ناموفق بود.");
-      return;
-    }
-
-    socket.onopen = () => {
-      setConnecting(false);
-      setConnected(true);
-
-      addMessage("system", "اتصال WebSocket برقرار شد.");
-    };
-
-    socket.onmessage = (event) => {
-      let text = event.data;
-
-      try {
-        const parsed = JSON.parse(event.data);
-
-        if (parsed.type === "ready") {
-          addMessage("system", "سرویس Echo آماده دریافت پیام است.");
-          return;
-        }
-
-        if (typeof parsed.message === "string") {
-          text = parsed.message;
-        }
-      } catch {
-        // Non-JSON responses are displayed as plain text.
-      }
-
-      addMessage("received", String(text));
-    };
-
-    socket.onerror = () => {
-      setError(
-        "ارتباط با سرویس Echo برقرار نشد. وضعیت سرور و احراز هویت را بررسی کن.",
-      );
-    };
-
-    socket.onclose = () => {
-      setConnected(false);
-      setConnecting(false);
-
-      if (socketRef.current === socket) {
-        socketRef.current = null;
-      }
-
-      if (!manuallyDisconnectedRef.current) {
-        addMessage("system", "اتصال سرویس بسته شد.");
-      }
-    };
-  }
-
-  function disconnect() {
-    manuallyDisconnectedRef.current = true;
-
-    const socket = socketRef.current;
-    socketRef.current = null;
-
-    setConnected(false);
-    setConnecting(false);
-    setError("");
-
-    if (socket) {
-      socket.close();
-    }
-
-    addMessage("system", "اتصال به سرویس Echo قطع شد.");
-  }
-
   function sendMessage(event) {
     event.preventDefault();
-
     const text = message.trim();
-
-    if (!text) {
-      setError("ابتدا یک پیام وارد کن.");
-      return;
-    }
-
-    if (socketRef.current?.readyState !== WebSocket.OPEN) {
-      setError("ابتدا به سرویس Echo متصل شو.");
-      return;
-    }
-
-    try {
-      socketRef.current.send(text);
-
-      addMessage("sent", text);
+    if (!text) return;
+    const ok = sendEchoMessage(text);
+    if (ok) {
       setMessage("");
-      setError("");
-    } catch {
-      setError("ارسال پیام ناموفق بود. اتصال را بررسی کن.");
     }
-  }
-
-  function clearMessages() {
-    setMessages([]);
-    setError("");
   }
 
   return (
@@ -449,16 +320,18 @@ export default function EchoPage() {
           )}
 
           <form onSubmit={sendMessage} className="flex items-end gap-3">
-            <label className="min-w-0 flex-1">
+            <label htmlFor="echoMessage" className="min-w-0 flex-1">
               <span className="mb-2 block text-xs font-bold text-[#33384C]">
                 پیام جدید
               </span>
 
               <input
+                id="echoMessage"
+                name="echoMessage"
                 value={message}
                 onChange={(event) => {
                   setMessage(event.target.value);
-                  if (error) setError("");
+                  if (error) clearError();
                 }}
                 placeholder={
                   connected

@@ -1,5 +1,5 @@
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   Calculator,
   Plus,
@@ -16,11 +16,8 @@ import {
   Minus,
   X,
 } from "lucide-react";
-import { getAccessToken } from "../../lib/api";
-
-const WS_URL = import.meta.env.DEV
-  ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws/calculator`
-  : `${(import.meta.env.VITE_API_BASE_URL || "https://ts.idicorp.ir").replace(/^http/, "ws")}/ws/calculator`;
+import { getErrorMessage } from "../../lib/api";
+import { executeCalculatorRequest } from "../../lib/socket";
 
 const operations = [
   { value: "add", label: "جمع", symbol: "+", icon: Plus },
@@ -35,17 +32,6 @@ export default function CalculatorPage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(false);
-
-  const socketRef = useRef(null);
-  const pendingRef = useRef(false);
-
-  useEffect(() => {
-    return () => {
-      pendingRef.current = false;
-      socketRef.current?.close();
-      socketRef.current = null;
-    };
-  }, []);
 
   function handleNumberChange(index, value) {
     setNumbers((current) =>
@@ -76,15 +62,10 @@ export default function CalculatorPage() {
     setOperation("add");
   }
 
-  function handleCalculate(event) {
+  async function handleCalculate(event) {
     event.preventDefault();
     setError("");
     setResult(null);
-
-    if (pendingRef.current) {
-      setError("درخواست قبلی هنوز در حال پردازش است.");
-      return;
-    }
 
     const values = numbers.map((value) => Number(value));
 
@@ -110,159 +91,19 @@ export default function CalculatorPage() {
       return;
     }
 
-    const token = getAccessToken();
-
-    if (!token) {
-      setError("توکن ورود در دسترس نیست. دوباره وارد پنل شو.");
-      return;
-    }
-
-    pendingRef.current = true;
     setConnecting(true);
 
-    let socket;
-
     try {
-      socket = new WebSocket(WS_URL);
-      socketRef.current = socket;
-    } catch {
-      pendingRef.current = false;
-      setConnecting(false);
-      setError("ساخت اتصال WebSocket ناموفق بود.");
-      return;
-    }
-
-    let authenticated = false;
-    let finished = false;
-    let timeoutId;
-
-    function cleanup() {
-      window.clearTimeout(timeoutId);
-      pendingRef.current = false;
-      setConnecting(false);
-
-      if (socketRef.current === socket) {
-        socketRef.current = null;
-      }
-    }
-
-    function finishWithError(message) {
-      if (finished) return;
-
-      finished = true;
-      cleanup();
-      setError(message);
-
-      if (
-        socket.readyState === WebSocket.OPEN ||
-        socket.readyState === WebSocket.CONNECTING
-      ) {
-        socket.close();
-      }
-    }
-
-    timeoutId = window.setTimeout(() => {
-      finishWithError("زمان انتظار برای پاسخ ماشین‌حساب به پایان رسید.");
-    }, 10000);
-
-    socket.onopen = () => {
-      try {
-        // سرور انتظار دارد توکن در اولین پیام WebSocket ارسال شود.
-        socket.send(JSON.stringify({ token }));
-      } catch {
-        finishWithError("ارسال اطلاعات احراز هویت ناموفق بود.");
-      }
-    };
-
-    socket.onmessage = (event) => {
-      if (finished) return;
-
-      let data;
-
-      try {
-        data = JSON.parse(event.data);
-      } catch {
-        finishWithError("پاسخ نامعتبر از سرویس ماشین‌حساب دریافت شد.");
-        return;
-      }
-
-      if (!data || typeof data !== "object") {
-        finishWithError("ساختار پاسخ سرویس معتبر نیست.");
-        return;
-      }
-
-      if (!authenticated) {
-        if (data.type === "ready") {
-          authenticated = true;
-
-          try {
-            socket.send(
-              JSON.stringify({
-                operation,
-                numbers: values,
-              }),
-            );
-          } catch {
-            finishWithError("ارسال درخواست محاسبه ناموفق بود.");
-          }
-
-          return;
-        }
-
-        if (data.type === "error" || data.error) {
-          finishWithError(
-            data.message ||
-              (typeof data.error === "string" ? data.error : null) ||
-              "احراز هویت WebSocket ناموفق بود.",
-          );
-        }
-
-        return;
-      }
-
-      if (data.type === "error" || data.error) {
-        finishWithError(
-          data.message ||
-            (typeof data.error === "string" ? data.error : null) ||
-            "محاسبه در سرویس ناموفق بود.",
-        );
-        return;
-      }
-
-      const calculatedResult =
-        data.result ?? data.value ?? data.output;
-
-      if (
-        calculatedResult === undefined ||
-        calculatedResult === null ||
-        (typeof calculatedResult !== "number" &&
-          typeof calculatedResult !== "string")
-      ) {
-        finishWithError("پاسخ سرویس فاقد نتیجه محاسبه معتبر است.");
-        return;
-      }
-
-      finished = true;
-      cleanup();
+      const calculatedResult = await executeCalculatorRequest({
+        operation,
+        numbers: values,
+      });
       setResult(calculatedResult);
-      socket.close();
-    };
-
-    socket.onerror = () => {
-      finishWithError("اتصال به WebSocket ناموفق بود.");
-    };
-
-    socket.onclose = (event) => {
-      if (finished) return;
-
-      finishWithError(
-        !authenticated
-          ? "اتصال WebSocket پیش از تأیید احراز هویت بسته شد."
-          : event.code === 1008
-            ? "سرور دسترسی به درخواست را رد کرد."
-            : "ارتباط WebSocket پیش از دریافت نتیجه قطع شد.",
-      );
-    };
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setConnecting(false);
+    }
   }
 
   const selectedOperation = operations.find(
@@ -443,11 +284,13 @@ export default function CalculatorPage() {
                       {String(index + 1).padStart(2, "0")}
                     </span>
 
-                    <label className="min-w-0 flex-1">
+                    <label htmlFor={`calc_num_${index}`} className="min-w-0 flex-1">
                       <span className="mb-1.5 block text-[11px] font-medium text-slate-500">
                         عدد {index + 1}
                       </span>
                       <input
+                        id={`calc_num_${index}`}
+                        name={`calc_num_${index}`}
                         type="number"
                         step="any"
                         value={number}

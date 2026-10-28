@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Eye,
   EyeOff,
@@ -12,16 +12,20 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
-  api,
   getErrorMessage,
-  setAccessToken,
+  authApi,
 } from "../../lib/api";
+import { useAuthStore } from "../../store/useAuthStore";
 
 const loginSchema = z.object({
   username: z.string().trim().min(1, "نام کاربری را وارد کنید."),
   password: z.string().min(1, "رمز عبور را وارد کنید."),
-  captcha_answer: z.string().trim().min(1, "پاسخ کپچا را وارد کنید."),
+  captcha_answer: z.string().trim().min(1, "پاسخ کد امنیتی را وارد کنید."),
 });
+
+async function requestCaptcha() {
+  return await authApi.getCaptcha();
+}
 
 export default function LoginPage({ onLogin }) {
   const [captcha, setCaptcha] = useState(null);
@@ -44,45 +48,57 @@ export default function LoginPage({ onLogin }) {
     },
   });
 
-  const loadCaptcha = useCallback(async () => {
+  async function fetchCaptcha() {
     setCaptchaLoading(true);
     setCaptchaError("");
     setCaptcha(null);
 
     try {
-      const { data } = await api.get("/api/auth/login", {
-        params: { _t: Date.now() },
-        withCredentials: true,
-      });
-
-      if (
-        typeof data?.captcha !== "string" ||
-        !data.captcha.startsWith("data:image/") ||
-        !data?.salt
-      ) {
-        throw new Error("پاسخ دریافتی کپچا معتبر نیست.");
-      }
-
-      setCaptcha({
-        captcha: data.captcha,
-        salt: data.salt,
-      });
+      const data = await requestCaptcha();
+      setCaptcha(data);
     } catch (error) {
       setCaptcha(null);
       setCaptchaError(
         error.response
           ? getErrorMessage(error)
           : error.message ||
-              "دریافت کپچا ناموفق بود. اتصال سرور و تنظیمات CORS را بررسی کنید.",
+              "دریافت کد امنیتی ناموفق بود. اتصال سرور و تنظیمات CORS را بررسی کنید.",
       );
     } finally {
       setCaptchaLoading(false);
     }
-  }, []);
+  }
 
   useEffect(() => {
-    loadCaptcha();
-  }, [loadCaptcha]);
+    let cancelled = false;
+
+    requestCaptcha()
+      .then((data) => {
+        if (!cancelled) {
+          setCaptcha(data);
+          setCaptchaError("");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setCaptcha(null);
+          setCaptchaError(
+            error.response
+              ? getErrorMessage(error)
+              : error.message || "دریافت کد امنیتی ناموفق بود.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCaptchaLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(values) {
     setLoginError("");
@@ -95,29 +111,14 @@ export default function LoginPage({ onLogin }) {
     }
 
     try {
-      const response = await api.post(
-        "/api/auth/login",
-        {
-          username: values.username.trim(),
-          password: values.password,
-          salt: captcha.salt,
-          captcha_answer: values.captcha_answer.trim(),
-        },
-        {
-          withCredentials: true,
-        },
-      );
+      const { access_token: token } = await authApi.login({
+        username: values.username.trim(),
+        password: values.password,
+        salt: captcha.salt,
+        captcha_answer: values.captcha_answer.trim(),
+      });
 
-      const token = response.data?.access_token;
-
-      if (typeof token !== "string" || !token) {
-        throw new Error(
-          "ورود پاسخ موفق داد، اما access_token در پاسخ وجود ندارد.",
-        );
-      }
-
-      
-      setAccessToken(token);
+      useAuthStore.getState().login(token, values.username.trim());
 
       reset({
         username: values.username,
@@ -127,8 +128,7 @@ export default function LoginPage({ onLogin }) {
 
       onLogin?.();
     } catch (error) {
-
-      setAccessToken(null);
+      useAuthStore.getState().logout();
 
       setLoginError(
         error.response
@@ -143,7 +143,7 @@ export default function LoginPage({ onLogin }) {
         captcha_answer: "",
       });
 
-      await loadCaptcha();
+      await fetchCaptcha();
     }
   }
 
@@ -340,7 +340,7 @@ export default function LoginPage({ onLogin }) {
                 <button
                   type="button"
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-[#E20912]/30 hover:bg-red-50 hover:text-[#E20912] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E20912]/30 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={loadCaptcha}
+                  onClick={fetchCaptcha}
                   disabled={isSubmitting || captchaLoading}
                   aria-label="دریافت کپچای جدید"
                   title="تازه‌سازی کد امنیتی"
@@ -358,7 +358,7 @@ export default function LoginPage({ onLogin }) {
                 </span>
                 <button
                   type="button"
-                  onClick={loadCaptcha}
+                  onClick={fetchCaptcha}
                   className="inline-flex items-center gap-1 font-bold underline underline-offset-4"
                 >
                   تلاش دوباره

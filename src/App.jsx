@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import {
   ListTodo,
@@ -10,6 +9,7 @@ import {
   ChevronLeft,
   ShieldCheck,
   RefreshCw,
+  User,
 } from "lucide-react";
 
 import LoginPage from "./features/auth/LoginPage";
@@ -17,7 +17,8 @@ import TasksPage from "./features/tasks/TasksPage";
 import CalculatorPage from "./features/calculator/CalculatorPage";
 import EchoPage from "./features/echo/EchoPage";
 import StreamingPage from "./features/echo/StreamingPage";
-import { api, clearAccessToken } from "./lib/api";
+import { api } from "./lib/api";
+import { useAuthStore } from "./store/useAuthStore";
 
 const navigationItems = [
   { id: "tasks", label: "مدیریت تسک‌ها", icon: ListTodo },
@@ -27,93 +28,60 @@ const navigationItems = [
 ];
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [authError, setAuthError] = useState("");
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isCheckingAuth = useAuthStore((state) => state.isCheckingAuth);
+  const authError = useAuthStore((state) => state.authError);
+  const username = useAuthStore((state) => state.username);
+  const logout = useAuthStore((state) => state.logout);
+  const setCheckingAuth = useAuthStore((state) => state.setCheckingAuth);
+  const setAuthError = useAuthStore((state) => state.setAuthError);
+
   const [activePage, setActivePage] = useState("tasks");
 
-  async function checkAuthentication() {
-    setCheckingAuth(true);
-    setAuthError("");
-
-    try {
-   
-      await api.get("/api/tasks", {
-        withCredentials: true,
-      });
-
-      setAuthenticated(true);
-    } catch (error) {
-      const status = error.response?.status;
-
-      if (status === 401 || status === 403) {
-        
-        setAuthenticated(false);
-      } else {
-     
-        setAuthError(
-          "بررسی نشست ناموفق بود. اتصال به سرور و تنظیمات CORS را بررسی کن.",
-        );
-      }
-    } finally {
-      setCheckingAuth(false);
-    }
-  }
-
+  // If token is present on initial load, verify with backend session
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     let cancelled = false;
+    setCheckingAuth(true);
 
-    async function initialCheck() {
-      try {
-        await api.get("/api/tasks", {
-          withCredentials: true,
-        });
-
+    api
+      .get("/api/tasks", { withCredentials: true })
+      .then(() => {
         if (!cancelled) {
-          setAuthenticated(true);
-          setAuthError("");
+          setAuthError(null);
         }
-      } catch (error) {
+      })
+      .catch((error) => {
         if (cancelled) return;
-
         const status = error.response?.status;
-
         if (status === 401 || status === 403) {
-          setAuthenticated(false);
+          logout();
         } else {
-          setAuthError(
-            "بررسی نشست ناموفق بود. اتصال به سرور و تنظیمات CORS را بررسی کن.",
-          );
+          setAuthError("بررسی نشست ناموفق بود. اتصال به سرور را بررسی کنید.");
         }
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) {
           setCheckingAuth(false);
         }
-      }
-    }
-
-    initialCheck();
+      });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAuthenticated, logout, setAuthError, setCheckingAuth]);
 
   function handleLogin() {
-
-    setAuthenticated(true);
-    setAuthError("");
     setActivePage("tasks");
   }
 
-function handleLogout() {
-  clearAccessToken();
-  setAuthenticated(false);
-  setAuthError("");
-  setActivePage("tasks");
-}
+  function handleLogout() {
+    logout();
+    setActivePage("tasks");
+  }
 
-  if (checkingAuth) {
+  if (isCheckingAuth) {
     return (
       <main
         dir="rtl"
@@ -122,7 +90,7 @@ function handleLogout() {
         <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
           <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-[#E20912]" />
           <span className="text-sm font-medium">
-            در حال بررسی وضعیت ورود...
+            در حال بررسی وضعیت نشست ورود...
           </span>
         </div>
       </main>
@@ -140,24 +108,36 @@ function handleLogout() {
           <p className="mt-3 text-sm leading-7 text-slate-600">
             {authError}
           </p>
-          <button
-            type="button"
-            onClick={checkAuthentication}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#1D2238] px-4 py-3 text-sm font-semibold text-white hover:bg-[#33384C]"
-          >
-            <RefreshCw size={16} />
-            تلاش دوباره
-          </button>
+          <div className="mt-5 flex gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthError(null);
+                setCheckingAuth(true);
+              }}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#1D2238] px-4 py-3 text-sm font-semibold text-white hover:bg-[#33384C]"
+            >
+              <RefreshCw size={16} />
+              تلاش دوباره
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              رفتن به صفحه ورود
+            </button>
+          </div>
         </div>
       </main>
     );
   }
 
-  if (!authenticated) {
+  if (!isAuthenticated) {
     return <LoginPage onLogin={handleLogin} />;
   }
 
-  const ActivePage =
+  const ActivePageComponent =
     activePage === "tasks"
       ? TasksPage
       : activePage === "calculator"
@@ -185,14 +165,21 @@ function handleLogout() {
           </div>
 
           <div className="flex shrink-0 items-center gap-3">
-            <div className="hidden items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 sm:flex">
-              <ShieldCheck size={15} />
-              <span>محیط سرویس‌ها</span>
+            <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 md:flex">
+              <User size={14} className="text-slate-500" />
+              <span>کاربر: {username || "admin"}</span>
             </div>
+
+            <div className="hidden items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 sm:flex">
+              <ShieldCheck size={14} />
+              <span>احراز هویت ایمن (In-Memory)</span>
+            </div>
+
             <button
               type="button"
               onClick={handleLogout}
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:border-red-200 hover:bg-red-100 focus:outline-none focus:ring-4 focus:ring-red-100 sm:px-4"
+              aria-label="خروج از حساب کاربری"
             >
               <LogOut size={16} />
               <span>خروج</span>
@@ -265,12 +252,12 @@ function handleLogout() {
           aria-label="محتوای سرویس انتخاب‌شده"
           className="min-w-0"
         >
-          <ActivePage />
+          <ActivePageComponent />
         </section>
 
         <footer className="mt-10 flex flex-col gap-2 border-t border-slate-200 px-1 py-5 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
           <span>IDICorp · Service Console</span>
-          <span>مدیریت یکپارچه سرویس‌ها</span>
+          <span>مدیریت یکپارچه سرویس‌ها با احراز هویت امن</span>
         </footer>
       </div>
     </div>

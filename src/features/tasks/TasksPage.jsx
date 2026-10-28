@@ -17,7 +17,20 @@ import {
   ClipboardList,
   Filter,
 } from "lucide-react";
-import { api, getErrorMessage } from "../../lib/api";
+import { useTaskStore } from "../../store/useTaskStore";
+
+function formatTaskDate(dateString) {
+  if (!dateString) return null;
+  try {
+    const d = new Date(dateString);
+    return new Intl.DateTimeFormat("fa-IR", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(d);
+  } catch {
+    return null;
+  }
+}
 
 const initialForm = {
   title: "",
@@ -26,77 +39,50 @@ const initialForm = {
 };
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState([]);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("all");
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
+  const tasks = useTaskStore((state) => state.tasks);
+  const searchQuery = useTaskStore((state) => state.searchQuery);
+  const statusFilter = useTaskStore((state) => state.statusFilter);
+  const isLoading = useTaskStore((state) => state.isLoading);
+  const isCreating = useTaskStore((state) => state.isCreating);
+  const savingEditId = useTaskStore((state) => state.savingEditId);
+  const updatingId = useTaskStore((state) => state.updatingId);
+  const deletingId = useTaskStore((state) => state.deletingId);
+  const error = useTaskStore((state) => state.error);
+  const success = useTaskStore((state) => state.successMessage);
+
+  const setSearchQuery = useTaskStore((state) => state.setSearchQuery);
+  const setStatusFilter = useTaskStore((state) => state.setStatusFilter);
+  const fetchTasks = useTaskStore((state) => state.fetchTasks);
+  const createTask = useTaskStore((state) => state.createTask);
+  const updateTask = useTaskStore((state) => state.updateTask);
+  const toggleTaskCompletion = useTaskStore((state) => state.toggleTaskCompletion);
+  const deleteTask = useTaskStore((state) => state.deleteTask);
+  const clearMessages = useTaskStore((state) => state.clearMessages);
+
+  // Aliases for JSX compatibility
+  const loading = isLoading;
+  const creating = isCreating;
+  const savingEdit = savingEditId !== null;
+  const search = searchQuery;
+  const status = statusFilter;
+  const setSearch = setSearchQuery;
+  const setStatus = setStatusFilter;
+
+  // Local form & modal state
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(initialForm);
-  const [error, setError] = useState("");
   const [formError, setFormError] = useState("");
-  const [success, setSuccess] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(initialForm);
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
   const [actionError, setActionError] = useState("");
-  const [updatingId, setUpdatingId] = useState(null);
-
-  async function fetchTasks() {
-    setLoading(true);
-    setError("");
-
-    try {
-      const params = {};
-
-      if (search.trim()) params.q = search.trim();
-      if (status !== "all") params.completed = status === "completed";
-
-      const { data } = await api.get("/api/tasks", { params });
-      setTasks(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [taskToDelete, setTaskToDelete] = useState(null);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadTasks() {
-      setLoading(true);
-      setError("");
-
-      try {
-        const params = {};
-
-        if (search.trim()) params.q = search.trim();
-        if (status !== "all") params.completed = status === "completed";
-
-        const { data } = await api.get("/api/tasks", { params });
-
-        if (!cancelled) {
-          setTasks(Array.isArray(data) ? data : []);
-        }
-      } catch (err) {
-        if (!cancelled) setError(getErrorMessage(err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    loadTasks();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [search, status]);
+    fetchTasks();
+  }, [searchQuery, statusFilter, fetchTasks]);
 
   function handleFormChange(event) {
     const { name, value, checked, type } = event.target;
-
     setForm((current) => ({
       ...current,
       [name]: type === "checkbox" ? checked : value,
@@ -106,8 +92,8 @@ export default function TasksPage() {
   async function handleCreateTask(event) {
     event.preventDefault();
     setFormError("");
-    setSuccess("");
     setActionError("");
+    clearMessages();
 
     const title = form.title.trim();
     const description = form.description.trim();
@@ -127,37 +113,15 @@ export default function TasksPage() {
       return;
     }
 
-    setCreating(true);
+    const ok = await createTask({
+      title,
+      description,
+      completed: form.completed,
+    });
 
-    try {
-      const { data: createdTask } = await api.post("/api/tasks", {
-        title,
-        description,
-        completed: form.completed,
-      });
-
+    if (ok) {
       setForm(initialForm);
       setShowForm(false);
-      setSuccess("تسک با موفقیت ایجاد شد.");
-
-
-      const matchesSearch =
-        !search.trim() ||
-        `${createdTask.title ?? ""} ${createdTask.description ?? ""}`
-          .toLowerCase()
-          .includes(search.trim().toLowerCase());
-
-      const matchesStatus =
-        status === "all" ||
-        Boolean(createdTask.completed) === (status === "completed");
-
-      if (matchesSearch && matchesStatus) {
-        setTasks((current) => [createdTask, ...current]);
-      }
-    } catch (err) {
-      setFormError(getErrorMessage(err));
-    } finally {
-      setCreating(false);
     }
   }
 
@@ -169,12 +133,11 @@ export default function TasksPage() {
       completed: Boolean(task.completed),
     });
     setActionError("");
-    setSuccess("");
+    clearMessages();
   }
 
   function handleEditChange(event) {
     const { name, value, checked, type } = event.target;
-
     setEditForm((current) => ({
       ...current,
       [name]: type === "checkbox" ? checked : value,
@@ -184,7 +147,7 @@ export default function TasksPage() {
   async function handleUpdateTask(event) {
     event.preventDefault();
     setActionError("");
-    setSuccess("");
+    clearMessages();
 
     const title = editForm.title.trim();
     const description = editForm.description.trim();
@@ -199,104 +162,42 @@ export default function TasksPage() {
       return;
     }
 
-    setSavingEdit(true);
+    const ok = await updateTask(editingId, {
+      title,
+      description,
+      completed: editForm.completed,
+    });
 
-    try {
-      const { data: updatedTask } = await api.patch(
-        `/api/tasks/${editingId}`,
-        { title, description, completed: editForm.completed },
-      );
-
-      setTasks((current) =>
-        current
-          .map((task) =>
-            task.id === editingId ? { ...task, ...updatedTask } : task,
-          )
-          .filter((task) => {
-            const matchesSearch =
-              !search.trim() ||
-              `${task.title ?? ""} ${task.description ?? ""}`
-                .toLowerCase()
-                .includes(search.trim().toLowerCase());
-
-            const matchesStatus =
-              status === "all" ||
-              Boolean(task.completed) === (status === "completed");
-
-            return matchesSearch && matchesStatus;
-          }),
-      );
-
+    if (ok) {
       setEditingId(null);
-      setSuccess("تسک با موفقیت ویرایش شد.");
-    } catch (err) {
-      setActionError(getErrorMessage(err));
-    } finally {
-      setSavingEdit(false);
     }
   }
 
-  async function handleDeleteTask(task) {
-    const confirmed = window.confirm(`از حذف تسک «${task.title}» مطمئنی؟`);
-    if (!confirmed) return;
+  function promptDeleteTask(task) {
+    setTaskToDelete(task);
+    setActionError("");
+    clearMessages();
+  }
+
+  async function confirmDeleteTask() {
+    if (!taskToDelete) return;
+    const task = taskToDelete;
+    setTaskToDelete(null);
 
     setActionError("");
-    setSuccess("");
-    setDeletingId(task.id);
+    clearMessages();
 
-    try {
-      await api.delete(`/api/tasks/${task.id}`);
-      setTasks((current) => current.filter((item) => item.id !== task.id));
-
-      if (editingId === task.id) setEditingId(null);
-
-      setSuccess("تسک با موفقیت حذف شد.");
-    } catch (err) {
-      setActionError(getErrorMessage(err));
-    } finally {
-      setDeletingId(null);
+    const ok = await deleteTask(task.id);
+    if (ok && editingId === task.id) {
+      setEditingId(null);
     }
   }
 
   async function handleToggleTask(task) {
     if (updatingId !== null) return;
-
     setActionError("");
-    setSuccess("");
-    setUpdatingId(task.id);
-
-    try {
-      const { data: updatedTask } = await api.patch(
-        `/api/tasks/${task.id}`,
-        { completed: !task.completed },
-      );
-
-      setTasks((current) =>
-        current
-          .map((item) =>
-            item.id === task.id ? { ...item, ...updatedTask } : item,
-          )
-          .filter((item) => {
-            const matchesSearch =
-              !search.trim() ||
-              `${item.title ?? ""} ${item.description ?? ""}`
-                .toLowerCase()
-                .includes(search.trim().toLowerCase());
-
-            const matchesStatus =
-              status === "all" ||
-              Boolean(item.completed) === (status === "completed");
-
-            return matchesSearch && matchesStatus;
-          }),
-      );
-
-      setSuccess("وضعیت تسک به‌روزرسانی شد.");
-    } catch (err) {
-      setActionError(getErrorMessage(err));
-    } finally {
-      setUpdatingId(null);
-    }
+    clearMessages();
+    await toggleTaskCompletion(task);
   }
 
   const completedCount = tasks.filter((task) => task.completed).length;
@@ -350,7 +251,7 @@ export default function TasksPage() {
                 onClick={() => {
                   setShowForm((current) => !current);
                   setFormError("");
-                  setSuccess("");
+                  clearMessages();
                 }}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#E20912] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#C80710] focus:outline-none focus:ring-4 focus:ring-[#E20912]/30"
               >
@@ -371,7 +272,7 @@ export default function TasksPage() {
             <p>{success}</p>
             <button
               type="button"
-              onClick={() => setSuccess("")}
+              onClick={clearMessages}
               className="mr-auto rounded-lg p-1 transition hover:bg-emerald-100"
               aria-label="بستن پیام"
             >
@@ -549,12 +450,14 @@ export default function TasksPage() {
           </div>
 
           <div className="flex flex-col gap-3 md:flex-row">
-            <label className="relative block flex-1">
+            <label htmlFor="taskSearch" className="relative block flex-1">
               <Search
                 size={18}
                 className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
               />
               <input
+                id="taskSearch"
+                name="taskSearch"
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -564,9 +467,11 @@ export default function TasksPage() {
               />
             </label>
 
-            <label className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 bg-[#FCFBFF] px-4 md:w-64">
+            <label htmlFor="taskStatusFilter" className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 bg-[#FCFBFF] px-4 md:w-64">
               <span className="shrink-0 text-sm text-slate-500">وضعیت:</span>
               <select
+                id="taskStatusFilter"
+                name="taskStatusFilter"
                 value={status}
                 onChange={(event) => setStatus(event.target.value)}
                 className="min-w-0 flex-1 cursor-pointer bg-transparent py-2 text-sm font-medium text-[#1D2238] outline-none"
@@ -790,7 +695,7 @@ export default function TasksPage() {
                               </p>
                             )}
 
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <div className="mt-3 flex flex-wrap items-center gap-3">
                               <span
                                 className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
                                   isCompleted
@@ -807,6 +712,13 @@ export default function TasksPage() {
                                 />
                                 {isCompleted ? "تکمیل‌شده" : "در حال انجام"}
                               </span>
+
+                              {task.created_at && (
+                                <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+                                  <Clock3 size={13} />
+                                  <span>{formatTaskDate(task.created_at)}</span>
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -824,7 +736,7 @@ export default function TasksPage() {
 
                           <button
                             type="button"
-                            onClick={() => handleDeleteTask(task)}
+                            onClick={() => promptDeleteTask(task)}
                             disabled={isDeleting}
                             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:border-red-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                             aria-label={`حذف ${task.title}`}
@@ -856,6 +768,45 @@ export default function TasksPage() {
               IDICorp Service Console
             </span>
           </footer>
+        )}
+
+        {taskToDelete && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-dialog-title"
+          >
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+              <div className="mb-4 flex items-center gap-3 text-red-600">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50">
+                  <Trash2 size={20} />
+                </div>
+                <h3 id="delete-dialog-title" className="text-base font-bold text-[#1D2238]">
+                  تأیید حذف تسک
+                </h3>
+              </div>
+              <p className="text-sm leading-6 text-slate-600">
+                آیا از حذف تسک «<strong className="text-[#1D2238]">{taskToDelete.title}</strong>» مطمئن هستید؟
+              </p>
+              <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setTaskToDelete(null)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteTask}
+                  className="rounded-xl bg-[#E20912] px-4 py-2 text-sm font-semibold text-white hover:bg-[#C80710]"
+                >
+                  حذف تسک
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </main>

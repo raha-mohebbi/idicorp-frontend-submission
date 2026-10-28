@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Radio,
   Send,
@@ -11,11 +11,7 @@ import {
   Waves,
   Sparkles,
 } from "lucide-react";
-import { getAccessToken } from "../../lib/api";
-
-const API_BASE_URL = import.meta.env.DEV
-  ? ""
-  : import.meta.env.VITE_API_BASE_URL || "https://ts.idicorp.ir";
+import { API_BASE_URL, getAccessToken } from "../../lib/api";
 
 export default function StreamingPage() {
   const [input, setInput] = useState("");
@@ -23,6 +19,16 @@ export default function StreamingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+
+  const abortControllerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -40,6 +46,12 @@ export default function StreamingPage() {
     }
 
     if (loading) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
 
     setLoading(true);
     setError("");
@@ -63,11 +75,14 @@ export default function StreamingPage() {
         Authorization: `Bearer ${token}`,
       };
 
-      const result = await fetch(`${API_BASE_URL}/api/echo/stream`, {
+      const streamUrl = `${API_BASE_URL}/api/echo/stream`;
+
+      const result = await fetch(streamUrl, {
         method: "POST",
         headers,
         credentials: "include",
         body: text,
+        signal,
       });
 
       if (!result.ok) {
@@ -88,7 +103,7 @@ export default function StreamingPage() {
             message = (await result.text()).slice(0, 300);
           }
         } catch {
-      //if parsing fails, ignore and use default message
+          // If parsing fails, ignore and use default message
         }
 
         if (result.status === 401) {
@@ -148,6 +163,10 @@ export default function StreamingPage() {
       setResponse(fullText);
       setStatus("پاسخ با موفقیت دریافت شد.");
     } catch (err) {
+      if (err.name === "AbortError") {
+        return;
+      }
+
       setStatus("");
 
       if (err instanceof TypeError) {
@@ -162,7 +181,7 @@ export default function StreamingPage() {
         try {
           reader.releaseLock();
         } catch {
-          //maybe already released or not supported
+          // Ignore release error
         }
       }
 
@@ -171,8 +190,12 @@ export default function StreamingPage() {
   }
 
   function clearForm() {
-    if (loading) return;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
 
+    setLoading(false);
     setInput("");
     setResponse("");
     setError("");
@@ -239,7 +262,7 @@ export default function StreamingPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-7">
-            <label className="block">
+            <label htmlFor="streamInput" className="block">
               <span className="mb-2 flex items-center justify-between gap-3 text-sm font-semibold text-slate-700">
                 <span>متن ورودی</span>
                 <span
@@ -254,6 +277,8 @@ export default function StreamingPage() {
               </span>
 
               <textarea
+                id="streamInput"
+                name="streamInput"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 placeholder="متن موردنظر را برای ارسال به سرور وارد کن..."
